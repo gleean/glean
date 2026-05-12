@@ -1,0 +1,13 @@
+{
+  "name": "@repo/pds",
+  "version": "0.0.0",
+  "private": true,
+  "description": "pds CLI（Rust），通过 bin 包装调用 workspace 内 cargo",
+  "bin": {
+    "pds": "./bin/pds.cjs"
+  },
+  "scripts": {
+    "build": "cargo build --release -p pds",
+    "parse": "cargo run -p pds -- parse"
+  }
+}

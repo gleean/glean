@@ -1,0 +1,27 @@
+{
+	"[javascript]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[typescript]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[typescriptreact]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[json]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"tailwindCSS.experimental.configFile": "/styles/globals.css",
+	"editor.formatOnSave": true,
+	"editor.codeActionsOnSave": {
+		"source.fixAll.biome": "explicit"
+	},
+	"editor.tabSize": 2,
+	"rust-analyzer.server.extraEnv": {
+		"PATH": "${env:HOME}/.cargo/bin:${env:PATH}"
+	},
+	"cSpell.words": [
+		"dedupe",
+		"opencc"
+	]
+}

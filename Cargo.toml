@@ -1,0 +1,3 @@
+[workspace]
+members = ["apps/cli", "packages/core", "packages/enterprise/native"]
+resolver = "2"
