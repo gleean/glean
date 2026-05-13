@@ -22,6 +22,8 @@
 	},
 	"cSpell.words": [
 		"dedupe",
+		"embedder",
+		"fastembed",
 		"opencc"
 	]
 }
