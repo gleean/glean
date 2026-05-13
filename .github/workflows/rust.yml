@@ -8,6 +8,10 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    concurrency:
+      group: rust-ci
+      cancel-in-progress: true
+
     steps:
       - uses: actions/checkout@v4
         with:
