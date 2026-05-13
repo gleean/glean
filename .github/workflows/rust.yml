@@ -11,8 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Workspace member `packages/enterprise` is a git submodule; required for `cargo metadata` / fmt / test.
+          # Private submodule: create repo secret ENTERPRISE_SUBMODULE_PAT (fine-grained PAT, read-only on glean-enterprise).
           submodules: recursive
+          token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
 
       - name: Install protobuf compiler (Lance / prost codegen)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
