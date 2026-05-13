@@ -14,11 +14,15 @@ path = "src/lib.rs"
 name = "glean"
 path = "src/main.rs"
 
+[features]
+default = []
+enterprise = ["dep:glean-enterprise"]
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 glean-core = { path = "../../packages/core" }
-notify = "6"
+glean-enterprise = { path = "../../packages/enterprise", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "rt-multi-thread", "signal"] }

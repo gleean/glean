@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use crate::chunk::chunk_plain_text_markdown_mvp;
 use crate::embed::Embedder;
 use crate::error::CoreError;
+use crate::parsers::ParserRegistry;
 use crate::storage::StorageLayout;
 use crate::store::{lance_chunks, sqlite};
 
@@ -19,12 +20,17 @@ pub struct GleanEngine {
     lance: Mutex<lancedb::Connection>,
     /// `None`: lazily initialize the default backend on first embed (avoids ONNX fetch during MCP handshake-only runs).
     embedder_slot: std::sync::Mutex<Option<Arc<dyn Embedder>>>,
+    /// Registered file parsers (extension → implementation); builtins cover UTF-8 text types.
+    parsers: Arc<ParserRegistry>,
 }
 
 impl GleanEngine {
     /// Prepare metadata DB, Lance dataset, and tables (default embedder loads lazily).
+    ///
+    /// Uses the built-in community [`ParserRegistry`] only. To load `packages/enterprise`, build
+    /// the CLI with `--features enterprise` and use [`Self::open_with_registry`].
     pub async fn open(layout: StorageLayout) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, None).await
+        Self::open_inner(layout, None, Arc::new(ParserRegistry::with_builtins())).await
     }
 
     /// Inject an embedder (integration tests should prefer [`crate::DeterministicEmbedder`]).
@@ -32,12 +38,35 @@ impl GleanEngine {
         layout: StorageLayout,
         embedder: Arc<dyn Embedder>,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, Some(embedder)).await
+        Self::open_inner(
+            layout,
+            Some(embedder),
+            Arc::new(ParserRegistry::with_builtins()),
+        )
+        .await
+    }
+
+    /// Open engine with a caller-built parser registry (community + optional enterprise).
+    pub async fn open_with_registry(
+        layout: StorageLayout,
+        parsers: Arc<ParserRegistry>,
+    ) -> Result<Arc<Self>, CoreError> {
+        Self::open_inner(layout, None, parsers).await
+    }
+
+    /// Open with custom embedder and custom parser registry.
+    pub async fn open_with_embedder_and_registry(
+        layout: StorageLayout,
+        embedder: Arc<dyn Embedder>,
+        parsers: Arc<ParserRegistry>,
+    ) -> Result<Arc<Self>, CoreError> {
+        Self::open_inner(layout, Some(embedder), parsers).await
     }
 
     async fn open_inner(
         layout: StorageLayout,
         embedder: Option<Arc<dyn Embedder>>,
+        parsers: Arc<ParserRegistry>,
     ) -> Result<Arc<Self>, CoreError> {
         layout.ensure_directories()?;
         let sqlite_path = layout.metadata_db_path();
@@ -56,6 +85,7 @@ impl GleanEngine {
             sqlite: std::sync::Mutex::new(conn),
             lance: Mutex::new(lance),
             embedder_slot: std::sync::Mutex::new(embedder),
+            parsers,
         }))
     }
 
@@ -75,6 +105,11 @@ impl GleanEngine {
 
     pub fn layout(&self) -> &StorageLayout {
         &self.layout
+    }
+
+    /// Parser registry used by workspace scans and incremental upserts.
+    pub fn parser_registry(&self) -> &ParserRegistry {
+        &self.parsers
     }
 
     /// Hybrid retrieval (BM25 on `text` + vector kNN, RRF) when FTS index exists; falls back to vector-only if hybrid fails.
@@ -141,7 +176,9 @@ impl GleanEngine {
         &self,
         workspace_root: &Path,
         task: &crate::sync::SyncTask,
+        min_file_bytes: u64,
         max_file_bytes: u64,
+        workspace_ignore: &crate::pipeline::WorkspaceIgnore,
     ) -> Result<(), CoreError> {
         match task {
             crate::sync::SyncTask::SkipLocked { .. } => Ok(()),
@@ -154,7 +191,7 @@ impl GleanEngine {
             }
             crate::sync::SyncTask::Upsert { path_key } => {
                 let rel = PathBuf::from(path_key);
-                let full_path = workspace_root.join(rel);
+                let full_path = workspace_root.join(&rel);
                 let lance_path = lance_file_path_for_index(workspace_root, path_key)?;
                 let meta = match std::fs::metadata(&full_path) {
                     Ok(m) => m,
@@ -165,17 +202,73 @@ impl GleanEngine {
                         return Ok(());
                     }
                 };
-                if meta.len() > max_file_bytes {
-                    return Err(CoreError::FileTooLarge {
-                        path: full_path,
-                        limit: max_file_bytes,
-                    });
+                let len = meta.len();
+                let rel_ref = rel.as_path();
+                if crate::pipeline::gates::should_skip_path_components(rel_ref) {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
                 }
+                if workspace_ignore.is_ignored(rel_ref, false) {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                }
+                if crate::pipeline::gates::should_skip_hidden_file(rel_ref) {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                }
+                let Some(ext) = rel
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_ascii_lowercase())
+                else {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                };
+                if crate::pipeline::gates::is_blocked_executable_extension(&ext) {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                }
+                if crate::pipeline::gates::should_skip_by_size(len, min_file_bytes, max_file_bytes)
+                {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                }
+                let Some(parser) = crate::pipeline::dispatcher::resolve_parser(&self.parsers, &ext)
+                else {
+                    self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                    return Ok(());
+                };
                 let bytes = std::fs::read(&full_path)?;
-                let content = String::from_utf8(bytes)
-                    .map_err(|_| CoreError::Msg(format!("non-utf8 file: {path_key}")))?;
+                let content = match parser.parse_bytes(&rel, &bytes) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(
+                            path = %path_key,
+                            err = %e,
+                            "parser failed; clearing index rows for path"
+                        );
+                        self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                        let db = self.lance.lock().await;
+                        lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                        return Ok(());
+                    }
+                };
                 let mtime_ns = file_mtime_ns(&meta);
-                let hash = sha256_hex(&content);
+                let hash = crate::pipeline::sha256_bytes_hex(&bytes);
 
                 let chunk_texts = chunk_plain_text_markdown_mvp(&content);
                 if chunk_texts.is_empty() {
@@ -237,11 +330,4 @@ fn file_mtime_ns(meta: &std::fs::Metadata) -> i64 {
         }
         Err(_) => 0,
     }
-}
-
-fn sha256_hex(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
 }

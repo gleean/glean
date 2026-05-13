@@ -8,10 +8,12 @@ pub mod chunk;
 pub mod embed;
 pub mod engine;
 pub mod error;
+pub mod parsers;
 pub mod pipeline;
 pub mod storage;
 pub mod store;
 pub mod sync;
+pub mod watcher;
 
 pub use embed::{DeterministicEmbedder, Embedder};
 pub use engine::GleanEngine;

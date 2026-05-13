@@ -6,10 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::signal;
 
-use glean_core::pipeline::{run_incremental_sync, DEFAULT_MAX_FILE_BYTES};
+use glean_core::pipeline::{run_incremental_sync, DEFAULT_MAX_FILE_BYTES, DEFAULT_MIN_FILE_BYTES};
 use glean_core::{open_storage, GleanEngine};
 
 async fn shutdown_signal() {
@@ -34,30 +33,25 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
     let workspace = workspace.canonicalize().unwrap_or(workspace);
 
     let layout = open_storage().context("open storage root")?;
-    let engine = GleanEngine::open(layout)
-        .await
-        .context("open glean engine")?;
+    let engine =
+        GleanEngine::open_with_registry(layout, crate::parser_bootstrap::build_parser_registry())
+            .await
+            .context("open glean engine")?;
 
-    run_incremental_sync(engine.as_ref(), &workspace, DEFAULT_MAX_FILE_BYTES)
-        .await
-        .context("initial sync")?;
-
-    let dirty = Arc::new(AtomicBool::new(false));
-    let dirty_cb = Arc::clone(&dirty);
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res: notify::Result<notify::Event>| {
-            if res.is_ok() {
-                dirty_cb.store(true, Ordering::Relaxed);
-            }
-        },
-        notify::Config::default(),
+    run_incremental_sync(
+        engine.as_ref(),
+        &workspace,
+        DEFAULT_MIN_FILE_BYTES,
+        DEFAULT_MAX_FILE_BYTES,
     )
-    .context("notify watcher")?;
+    .await
+    .context("initial sync")?;
 
-    watcher
-        .watch(&workspace, RecursiveMode::Recursive)
-        .context("watch workspace")?;
+    let dirt = Arc::new(AtomicBool::new(false));
+
+    let _watcher_hold =
+        glean_core::watcher::install_recursive_workspace_watch(&workspace, Arc::clone(&dirt))
+            .context("notify watcher")?;
 
     tracing::info!(
         workspace = %workspace.display(),
@@ -71,9 +65,15 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
         tokio::select! {
             _ = shutdown_signal() => break,
             _ = tick.tick() => {
-                if dirty.swap(false, Ordering::Relaxed) {
+                if dirt.swap(false, Ordering::Relaxed) {
                     if let Err(e) =
-                        run_incremental_sync(engine.as_ref(), &workspace, DEFAULT_MAX_FILE_BYTES).await
+                        run_incremental_sync(
+                            engine.as_ref(),
+                            &workspace,
+                            DEFAULT_MIN_FILE_BYTES,
+                            DEFAULT_MAX_FILE_BYTES,
+                        )
+                            .await
                     {
                         tracing::error!(error = %e, "incremental sync failed");
                     }

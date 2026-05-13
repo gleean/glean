@@ -303,6 +303,7 @@ mod tests {
         glean_core::pipeline::run_incremental_sync(
             engine.as_ref(),
             workspace.path(),
+            glean_core::pipeline::DEFAULT_MIN_FILE_BYTES,
             glean_core::pipeline::DEFAULT_MAX_FILE_BYTES,
         )
         .await

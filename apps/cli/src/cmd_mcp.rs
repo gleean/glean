@@ -10,9 +10,12 @@ use crate::mcp_protocol::router::{handle_json_line, McpSharedState};
 /// Run the MCP stdio server (invoked by `glean mcp`).
 pub async fn run_mcp_server() -> Result<()> {
     let layout = glean_core::open_storage().context("open GLEAN_STORAGE_ROOT")?;
-    let engine = glean_core::GleanEngine::open(layout)
-        .await
-        .context("open glean engine")?;
+    let engine = glean_core::GleanEngine::open_with_registry(
+        layout,
+        crate::parser_bootstrap::build_parser_registry(),
+    )
+    .await
+    .context("open glean engine")?;
 
     let workspace_root = std::env::var("GLEAN_WORKSPACE_ROOT")
         .ok()

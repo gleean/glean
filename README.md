@@ -51,7 +51,6 @@ Chunks are embedded with **FastEmbed** using **`AllMiniLM-L6-v2`** (**384-dimens
 
 If you upgrade Glean and see **`LanceDB schema mismatch`**, stop running processes, delete **`$GLEAN_STORAGE_ROOT/vectors`** (or the entire storage root), then run **`glean daemon`** again so the workspace is reindexed.
 
-
 ## Verification loop
 
 ```bash

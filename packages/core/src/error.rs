@@ -55,6 +55,12 @@ impl From<walkdir::Error> for CoreError {
     }
 }
 
+impl From<ignore::Error> for CoreError {
+    fn from(e: ignore::Error) -> Self {
+        CoreError::Msg(e.to_string())
+    }
+}
+
 /// Errors opening or preparing the on-disk storage layout.
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
