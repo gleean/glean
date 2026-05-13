@@ -2,6 +2,7 @@
 name = "glean-core"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.91"
 description = "Glean core engine library (indexing pipeline, storage)."
 license = "Apache-2.0"
 
@@ -13,14 +14,14 @@ default = ["fastembed"]
 fastembed = ["dep:fastembed"]
 
 [dependencies]
-arrow-array = "57"
-arrow-schema = "57"
+arrow-array = "58"
+arrow-schema = "58"
 dirs = "6"
 fastembed = { version = "5", optional = true }
 futures = "0.3"
 ignore = "0.4"
-lance-index = "4.0"
-lancedb = "0.27"
+lance-index = "6.0"
+lancedb = "0.29"
 notify = "6"
 rusqlite = { version = "0.39", features = ["bundled"] }
 sha2 = "0.10"

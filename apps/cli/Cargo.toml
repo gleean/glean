@@ -2,6 +2,7 @@
 name = "glean-cli"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.91"
 description = "Glean CLI: daemon, MCP stdio server, and human-facing commands."
 license = "Apache-2.0"
 default-run = "glean"

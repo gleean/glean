@@ -4,7 +4,7 @@ Glean is a **local-first knowledge engine** with a Rust core. This repository is
 
 ## Building
 
-Prerequisites: Rust stable (`rustup`), `cargo`, and **`protoc`** (Protocol Buffers compiler - required by LanceDB's Rust dependency chain). On macOS: `brew install protobuf`; on Debian/Ubuntu: `sudo apt-get install protobuf-compiler`.
+Prerequisites: Rust **stable 1.91+** (`rustup`), `cargo`, and **`protoc`** (Protocol Buffers compiler - required by LanceDB's Rust dependency chain). On macOS: `brew install protobuf`; on Debian/Ubuntu: `sudo apt-get install protobuf-compiler`.
 
 ```bash
 cargo build -p glean-cli --release
