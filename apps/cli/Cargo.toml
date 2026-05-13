@@ -1,14 +1,30 @@
 [package]
-name = "pds"
+name = "glean-cli"
 version = "0.1.0"
 edition = "2021"
-description = "private-doc-stack CLI：pds"
-default-run = "pds"
+description = "Glean CLI: daemon, MCP stdio server, and human-facing commands."
+license = "Apache-2.0"
+default-run = "glean"
+
+[lib]
+name = "glean_cli"
+path = "src/lib.rs"
 
 [[bin]]
-name = "pds"
+name = "glean"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-parser-core = { path = "../../packages/parser-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+glean-core = { path = "../../packages/core" }
+notify = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"

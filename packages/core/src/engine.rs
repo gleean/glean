@@ -1,0 +1,247 @@
+//! Shared runtime wiring SQLite + LanceDB for CLI / MCP.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use rusqlite::Connection;
+use tokio::sync::Mutex;
+
+use crate::chunk::chunk_plain_text_markdown_mvp;
+use crate::embed::Embedder;
+use crate::error::CoreError;
+use crate::storage::StorageLayout;
+use crate::store::{lance_chunks, sqlite};
+
+/// Primary engine handle (opened once per process).
+pub struct GleanEngine {
+    layout: StorageLayout,
+    sqlite: std::sync::Mutex<Connection>,
+    lance: Mutex<lancedb::Connection>,
+    /// `None`: lazily initialize the default backend on first embed (avoids ONNX fetch during MCP handshake-only runs).
+    embedder_slot: std::sync::Mutex<Option<Arc<dyn Embedder>>>,
+}
+
+impl GleanEngine {
+    /// Prepare metadata DB, Lance dataset, and tables (default embedder loads lazily).
+    pub async fn open(layout: StorageLayout) -> Result<Arc<Self>, CoreError> {
+        Self::open_inner(layout, None).await
+    }
+
+    /// Inject an embedder (integration tests should prefer [`crate::DeterministicEmbedder`]).
+    pub async fn open_with_embedder(
+        layout: StorageLayout,
+        embedder: Arc<dyn Embedder>,
+    ) -> Result<Arc<Self>, CoreError> {
+        Self::open_inner(layout, Some(embedder)).await
+    }
+
+    async fn open_inner(
+        layout: StorageLayout,
+        embedder: Option<Arc<dyn Embedder>>,
+    ) -> Result<Arc<Self>, CoreError> {
+        layout.ensure_directories()?;
+        let sqlite_path = layout.metadata_db_path();
+        let conn = sqlite::open_conn(&sqlite_path)?;
+
+        let uri = layout.lancedb_uri();
+        let uri_str = uri.to_string_lossy().to_string();
+        let lance = lancedb::connect(&uri_str)
+            .execute()
+            .await
+            .map_err(|e| CoreError::Lance(e.to_string()))?;
+        lance_chunks::ensure_document_chunks_table(&lance).await?;
+
+        Ok(Arc::new(Self {
+            layout,
+            sqlite: std::sync::Mutex::new(conn),
+            lance: Mutex::new(lance),
+            embedder_slot: std::sync::Mutex::new(embedder),
+        }))
+    }
+
+    fn embedder_or_init(&self) -> Result<Arc<dyn Embedder>, CoreError> {
+        let mut slot = self
+            .embedder_slot
+            .lock()
+            .map_err(|_| CoreError::Msg("embedder mutex poisoned".into()))?;
+        if slot.is_none() {
+            *slot = Some(crate::embed::default_embedder()?);
+        }
+        Ok(slot
+            .as_ref()
+            .ok_or_else(|| CoreError::Msg("embedder missing after lazy init".into()))?
+            .clone())
+    }
+
+    pub fn layout(&self) -> &StorageLayout {
+        &self.layout
+    }
+
+    /// Hybrid retrieval (BM25 on `text` + vector kNN, RRF) when FTS index exists; falls back to vector-only if hybrid fails.
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String)>, CoreError> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let embedder = self.embedder_or_init()?;
+        let query_vec = embedder.embed_query(q)?;
+        let db = self.lance.lock().await;
+        lance_chunks::semantic_search_chunks(&db, &query_vec, q, limit).await
+    }
+
+    /// Recent indexed paths from SQLite shadow metadata.
+    pub fn recent_changes(&self, limit: usize) -> Result<Vec<(String, i64)>, CoreError> {
+        let conn = self
+            .sqlite
+            .lock()
+            .map_err(|_| CoreError::Msg("sqlite lock poisoned".into()))?;
+        Ok(sqlite::recent_changes(&conn, limit)?)
+    }
+
+    /// Read UTF-8 text when `abs_path` stays inside `workspace_root` (both canonicalized).
+    pub fn read_file_context(
+        &self,
+        workspace_root: &Path,
+        abs_path: &Path,
+        max_bytes: u64,
+    ) -> Result<String, CoreError> {
+        let ws = workspace_root.canonicalize()?;
+        let target = abs_path.canonicalize().map_err(CoreError::Io)?;
+        if !target.starts_with(&ws) {
+            return Err(CoreError::PathForbidden(target));
+        }
+        let meta = std::fs::metadata(&target)?;
+        let len = meta.len();
+        if len > max_bytes {
+            return Err(CoreError::FileTooLarge {
+                path: target,
+                limit: max_bytes,
+            });
+        }
+        let bytes = std::fs::read(&target)?;
+        String::from_utf8(bytes).map_err(|_| CoreError::Msg("file is not valid UTF-8".into()))
+    }
+
+    pub(crate) fn with_sqlite<R>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<R, rusqlite::Error>,
+    ) -> Result<R, CoreError> {
+        let conn = self
+            .sqlite
+            .lock()
+            .map_err(|_| CoreError::Msg("sqlite lock poisoned".into()))?;
+        Ok(f(&conn)?)
+    }
+
+    pub(crate) async fn apply_sync_task(
+        &self,
+        workspace_root: &Path,
+        task: &crate::sync::SyncTask,
+        max_file_bytes: u64,
+    ) -> Result<(), CoreError> {
+        match task {
+            crate::sync::SyncTask::SkipLocked { .. } => Ok(()),
+            crate::sync::SyncTask::Purge { path_key } => {
+                self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                let lance_path = lance_file_path_for_index(workspace_root, path_key)?;
+                let db = self.lance.lock().await;
+                lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                Ok(())
+            }
+            crate::sync::SyncTask::Upsert { path_key } => {
+                let rel = PathBuf::from(path_key);
+                let full_path = workspace_root.join(rel);
+                let lance_path = lance_file_path_for_index(workspace_root, path_key)?;
+                let meta = match std::fs::metadata(&full_path) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        self.with_sqlite(|c| sqlite::delete_file_meta(c, path_key))?;
+                        let db = self.lance.lock().await;
+                        lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                        return Ok(());
+                    }
+                };
+                if meta.len() > max_file_bytes {
+                    return Err(CoreError::FileTooLarge {
+                        path: full_path,
+                        limit: max_file_bytes,
+                    });
+                }
+                let bytes = std::fs::read(&full_path)?;
+                let content = String::from_utf8(bytes)
+                    .map_err(|_| CoreError::Msg(format!("non-utf8 file: {path_key}")))?;
+                let mtime_ns = file_mtime_ns(&meta);
+                let hash = sha256_hex(&content);
+
+                let chunk_texts = chunk_plain_text_markdown_mvp(&content);
+                if chunk_texts.is_empty() {
+                    let db = self.lance.lock().await;
+                    lance_chunks::delete_chunks_for_file(&db, &lance_path).await?;
+                } else {
+                    let embedder = self.embedder_or_init()?;
+                    let refs: Vec<&str> = chunk_texts.iter().map(|s| s.as_str()).collect();
+                    let t0 = std::time::Instant::now();
+                    let embeddings = embedder.embed_batch(&refs)?;
+                    tracing::debug!(
+                        path = %path_key,
+                        lance_file_path = %lance_path,
+                        chunk_count = chunk_texts.len(),
+                        embed_ms = t0.elapsed().as_millis() as u64,
+                        "embedded workspace file chunks"
+                    );
+                    let indexed: Vec<(u32, String)> = chunk_texts
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, s)| (i as u32, s))
+                        .collect();
+                    let db = self.lance.lock().await;
+                    lance_chunks::replace_file_chunks(&db, &lance_path, &indexed, &embeddings)
+                        .await?;
+                }
+
+                self.with_sqlite(|c| sqlite::upsert_file_meta(c, path_key, mtime_ns, &hash))?;
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Absolute path string for Lance `file_path`: canonical workspace root + shadow `path_key`.
+///
+/// Uses `canonicalize(workspace_root)` (not the file itself) so the same value is reproduced on
+/// purge after the file is deleted.
+fn lance_file_path_for_index(workspace_root: &Path, path_key: &str) -> Result<String, CoreError> {
+    if path_key.is_empty() || path_key.contains("..") {
+        return Err(CoreError::Msg(
+            "path_key must be non-empty and must not contain '..'".into(),
+        ));
+    }
+    let root = workspace_root.canonicalize().map_err(CoreError::Io)?;
+    let abs = root.join(path_key);
+    if !abs.starts_with(&root) {
+        return Err(CoreError::PathForbidden(abs));
+    }
+    Ok(abs.to_string_lossy().into_owned())
+}
+
+fn file_mtime_ns(meta: &std::fs::Metadata) -> i64 {
+    let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+    match modified.duration_since(std::time::SystemTime::UNIX_EPOCH) {
+        Ok(d) => {
+            let n = d.as_secs() as i128 * 1_000_000_000 + d.subsec_nanos() as i128;
+            n.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+        }
+        Err(_) => 0,
+    }
+}
+
+fn sha256_hex(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
