@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Workspace member `packages/enterprise` is a git submodule; required for `cargo metadata` / fmt / test.
+          submodules: recursive
 
       - name: Install protobuf compiler (Lance / prost codegen)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
