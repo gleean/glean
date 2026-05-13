@@ -43,7 +43,7 @@ fn sorted_log_files(logs_dir: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf
         let modified = meta.modified().ok();
         entries.push((modified, p));
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     Ok(entries.into_iter().map(|(_, p)| p).collect())
 }
 
