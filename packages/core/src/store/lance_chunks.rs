@@ -216,9 +216,9 @@ pub async fn replace_file_chunks(
 }
 
 fn fts_index_covers_text(indices: &[IndexConfig]) -> bool {
-    indices.iter().any(|cfg| {
-        cfg.index_type == IndexType::FTS && cfg.columns.iter().any(|c| c == "text")
-    })
+    indices
+        .iter()
+        .any(|cfg| cfg.index_type == IndexType::FTS && cfg.columns.iter().any(|c| c == "text"))
 }
 
 /// Ensure a BM25-capable FTS index exists on `text` when the table has rows.
@@ -514,11 +514,11 @@ mod tests {
         .await
         .unwrap();
 
-        let hits = semantic_search_chunks(&db, &near, needle, 5)
-            .await
-            .unwrap();
+        let hits = semantic_search_chunks(&db, &near, needle, 5).await.unwrap();
         assert!(
-            hits.first().map(|(_, t)| t.contains(needle)).unwrap_or(false),
+            hits.first()
+                .map(|(_, t)| t.contains(needle))
+                .unwrap_or(false),
             "expected hybrid RRF to rank lexical match first, got {:?}",
             hits
         );
