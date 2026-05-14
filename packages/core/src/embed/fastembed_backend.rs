@@ -5,7 +5,10 @@ use std::sync::Mutex;
 use fastembed::{
     EmbeddingModel, ExecutionProviderDispatch, ModelTrait, TextEmbedding, TextInitOptions,
 };
-use ort::ep::{CoreML, CPU, CUDA};
+use ort::ep::{CPU, CUDA};
+
+#[cfg(target_os = "macos")]
+use ort::ep::CoreML;
 
 use super::{assert_embedding_rows, Embedder};
 use crate::config::EmbeddingConfig;
