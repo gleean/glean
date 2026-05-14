@@ -74,9 +74,8 @@ fn tail_then_follow_until_newer_file(
     logs_dir: &Path,
     prefix: Option<&str>,
 ) -> Result<PathBuf> {
-    let mut reader = BufReader::new(
-        File::open(path).with_context(|| format!("open {}", path.display()))?,
-    );
+    let mut reader =
+        BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
 
     if tail_lines > 0 {
         let mut dq = VecDeque::with_capacity(tail_lines.max(1));
