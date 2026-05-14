@@ -2,10 +2,17 @@
 
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+
+/// Poll interval when waiting for more bytes at EOF.
+const FOLLOW_POLL_MS: u64 = 200;
+/// How often to check for a newer rolling log file (`mtime` / filename).
+const ROTATE_CHECK_INTERVAL: u32 = 25;
 
 /// Read up to `max_lines` lines from the end of a text file (loads whole file; OK for local logs).
 fn tail_file(path: &Path, max_lines: usize) -> Result<Vec<String>> {
@@ -59,8 +66,65 @@ pub enum LogRuntimeFilter {
     All,
 }
 
+/// Print the last `tail_lines` lines, then stream new lines until a newer log file appears.
+/// Returns the path of that newer file so the caller can continue following it.
+fn tail_then_follow_until_newer_file(
+    path: &Path,
+    tail_lines: usize,
+    logs_dir: &Path,
+    prefix: Option<&str>,
+) -> Result<PathBuf> {
+    let mut reader = BufReader::new(
+        File::open(path).with_context(|| format!("open {}", path.display()))?,
+    );
+
+    if tail_lines > 0 {
+        let mut dq = VecDeque::with_capacity(tail_lines.max(1));
+        for line in reader.by_ref().lines() {
+            let line = line?;
+            if dq.len() >= tail_lines {
+                dq.pop_front();
+            }
+            dq.push_back(line);
+        }
+        for line in dq {
+            println!("{line}");
+        }
+    } else {
+        reader.seek(SeekFrom::End(0))?;
+    }
+
+    let mut poll_ticks: u32 = 0;
+    let mut buf = String::new();
+    loop {
+        buf.clear();
+        let n = reader.read_line(&mut buf)?;
+        if n > 0 {
+            print!("{buf}");
+            std::io::stdout().flush()?;
+            poll_ticks = 0;
+            continue;
+        }
+
+        thread::sleep(Duration::from_millis(FOLLOW_POLL_MS));
+        poll_ticks += 1;
+        if poll_ticks < ROTATE_CHECK_INTERVAL {
+            continue;
+        }
+        poll_ticks = 0;
+
+        let files = sorted_log_files(logs_dir, prefix)?;
+        let Some(newest) = files.first() else {
+            continue;
+        };
+        if newest != path {
+            return Ok(newest.clone());
+        }
+    }
+}
+
 /// Entry point for `glean logs`.
-pub fn run_logs(source: LogRuntimeFilter, lines: usize) -> Result<()> {
+pub fn run_logs(source: LogRuntimeFilter, lines: usize, follow: bool) -> Result<()> {
     let layout =
         glean_core::StorageLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
     let log_dir = layout.root.join("logs");
@@ -82,11 +146,27 @@ pub fn run_logs(source: LogRuntimeFilter, lines: usize) -> Result<()> {
         anyhow::bail!("no matching log files under {}", log_dir.display());
     }
 
-    let target = &files[0];
-    let tail = tail_file(target, lines)?;
-    println!("{} (last {} lines)", target.display(), lines);
-    for line in tail {
-        println!("{line}");
+    let mut path = files.into_iter().next().expect("non-empty files");
+    print!("{} (last {} lines)", path.display(), lines);
+    if follow {
+        print!(" — following (Ctrl+C to stop)");
     }
-    Ok(())
+    println!();
+
+    if !follow {
+        for line in tail_file(&path, lines)? {
+            println!("{line}");
+        }
+        return Ok(());
+    }
+
+    let mut tail_n = lines;
+    loop {
+        let next = tail_then_follow_until_newer_file(&path, tail_n, &log_dir, prefix)?;
+        if next != path {
+            eprintln!("glean logs: switched to {}", next.display());
+        }
+        path = next;
+        tail_n = 0;
+    }
 }

@@ -11,6 +11,7 @@ use std::path::Path;
 
 use walkdir::WalkDir;
 
+use crate::digest_util::digest_to_hex_lower;
 use crate::engine::GleanEngine;
 use crate::error::CoreError;
 use crate::parsers::ParserRegistry;
@@ -28,7 +29,7 @@ pub fn sha256_bytes_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    digest_to_hex_lower(hasher.finalize())
 }
 
 fn extension_key(path: &Path) -> Option<String> {

@@ -13,6 +13,7 @@ use lancedb::index::{Index, IndexConfig, IndexType};
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use sha2::{Digest, Sha256};
 
+use crate::digest_util::digest_to_hex_lower;
 use crate::error::CoreError;
 use crate::storage::StorageLayout;
 
@@ -71,7 +72,7 @@ pub fn chunk_row_id(file_path: &str, chunk_index: u32) -> String {
     hasher.update(file_path.as_bytes());
     hasher.update([0_u8]);
     hasher.update(chunk_index.to_be_bytes());
-    format!("{:x}", hasher.finalize())
+    digest_to_hex_lower(hasher.finalize())
 }
 
 fn embedding_batch_from_vectors(rows: &[Vec<f32>]) -> Result<ArrayRef, CoreError> {

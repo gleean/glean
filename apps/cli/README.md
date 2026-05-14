@@ -4,12 +4,14 @@ Single binary **`glean`**: the workspace default-run target for the Glean local-
 
 For storage layout, MCP tools, and embedding behavior, see the [repository root `README.md`](../../README.md).
 
+**MCP debugging:** stdio lines must be JSON-RPC (examples in the root README). For iteration, run **`cargo test -p glean-cli mcp_protocol::router`** first; use **`cargo test -p glean-cli --test mcp_subprocess`** for a real `glean` binary + temp storage smoke test.
+
 ## Commands
 
 | Command            | Role                                                                                                                                         |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`glean daemon`** | Watch the workspace (via `glean-core` notify pipeline), debounce, and run incremental sync into LanceDB + SQLite under `GLEAN_STORAGE_ROOT`. |
-| **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Do not write logs or diagnostics to **stdout** in this mode.                    |
+| **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Each stdin line must be valid JSON-RPC (plaintext like `initialize` is not accepted). Root `README.md` has **Manual stdin** echo examples. Do not write logs to **stdout** in this mode. |
 | **`glean logs`**   | Print the tail of rolling log files under `{GLEAN_STORAGE_ROOT}/logs/`. Options: `-n` / `--lines`, `--source cli` / `daemon` / `all`.        |
 | **`glean status`** | Emit version via **`tracing`** (stderr); useful for quick sanity checks.                                                                     |
 

@@ -38,6 +38,9 @@ pub enum Commands {
         /// Maximum lines to print from the newest matching log file.
         #[arg(short = 'n', long, default_value_t = 80)]
         lines: usize,
+        /// Keep reading and printing new lines (like `tail -f`; Ctrl+C to stop).
+        #[arg(short = 'f', long)]
+        follow: bool,
         /// Which rolling prefix to prefer (`cli` vs `daemon`).
         #[arg(long, value_enum, default_value_t = cmd_logs::LogRuntimeFilter::Cli)]
         source: cmd_logs::LogRuntimeFilter,
@@ -49,7 +52,11 @@ pub enum Commands {
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Logs { lines, source } => cmd_logs::run_logs(source, lines),
+        Commands::Logs {
+            lines,
+            source,
+            follow,
+        } => cmd_logs::run_logs(source, lines, follow),
         Commands::Daemon { workspace } => {
             logging::init_logging(logging::LogRuntime::Daemon)?;
             cmd_daemon::run_daemon(workspace).await

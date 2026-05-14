@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+mod digest_util;
+
 pub mod chunk;
 pub mod embed;
 pub mod engine;

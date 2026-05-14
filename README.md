@@ -20,6 +20,38 @@ Run the MCP server on stdin/stdout:
 glean mcp
 ```
 
+### Manual stdin (debugging)
+
+The server reads **newline-delimited JSON**: each line must be a full **JSON-RPC 2.0** object (`jsonrpc`, `method`, and for requests an **`id`**). Typing plain text such as `initialize` is **not** valid JSON, so you will see **`Parse error` (`-32700`)** on stdout.
+
+**`INFO` lines from `lance::dataset_events` on stderr** while the process starts are normal: the engine opens the Lance dataset before the read loop; they are not protocol traffic.
+
+One-shot check (one request, then EOF):
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | ./target/release/glean mcp
+```
+
+Expect a single JSON line on stdout with a `result` payload (capabilities + `serverInfo`). Two requests on two lines:
+
+```bash
+printf '%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | ./target/release/glean mcp
+```
+
+### Automated tests (recommended over manual stdio)
+
+MCP behaviour is awkward to poke interactively because **stdin needs JSON lines**. Use the bundled tests instead:
+
+- **Fast in-process tests** (`handle_json_line`):  
+  `cargo test -p glean-cli mcp_protocol::router`
+- **Real subprocess + temp storage** (`CARGO_BIN_EXE_glean` stdio framing):  
+  `cargo test -p glean-cli --test mcp_subprocess`
+
+The router tests cover `initialize`, invalid JSON / plaintext lines, unknown methods, `tools/list`, and a `tools/call`/`search_semantic` round-trip with indexed content.
+
 ### Cursor (example)
 
 Use **command + args** form when your client splits arguments:

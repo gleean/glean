@@ -286,32 +286,37 @@ async fn handle_tools_call(id: Value, params: Option<Value>, ctx: &McpSharedStat
 mod tests {
     use super::*;
 
-    async fn sample_ctx() -> McpSharedState {
+    async fn lite_ctx() -> McpSharedState {
         use std::sync::Arc;
 
-        let storage = tempfile::tempdir().unwrap();
-        let workspace = tempfile::tempdir().unwrap();
-        let layout = glean_core::StorageLayout::from_root(storage.path());
-        layout.ensure_directories().unwrap();
+        // Keep directories after this returns: naive `TempDir` drop would delete them mid-test.
+        let storage_path = tempfile::tempdir().unwrap().keep();
+        let workspace_path = tempfile::tempdir().unwrap().keep();
+        let layout = glean_core::StorageLayout::from_root(&storage_path);
         let engine = glean_core::GleanEngine::open_with_embedder(
             layout,
             Arc::new(glean_core::DeterministicEmbedder::new()),
         )
         .await
         .unwrap();
-        std::fs::write(workspace.path().join("note.txt"), "hello needle-token").unwrap();
+        McpSharedState {
+            engine,
+            workspace_root: workspace_path,
+        }
+    }
+
+    async fn sample_ctx() -> McpSharedState {
+        let ctx = lite_ctx().await;
+        std::fs::write(ctx.workspace_root.join("note.txt"), "hello needle-token").unwrap();
         glean_core::pipeline::run_incremental_sync(
-            engine.as_ref(),
-            workspace.path(),
+            ctx.engine.as_ref(),
+            &ctx.workspace_root,
             glean_core::pipeline::DEFAULT_MIN_FILE_BYTES,
             glean_core::pipeline::DEFAULT_MAX_FILE_BYTES,
         )
         .await
         .unwrap();
-        McpSharedState {
-            engine,
-            workspace_root: workspace.path().to_path_buf(),
-        }
+        ctx
     }
 
     #[tokio::test]
@@ -352,6 +357,38 @@ mod tests {
             names,
             vec!["search_semantic", "read_file_context", "get_recent_changes"]
         );
+    }
+
+    #[tokio::test]
+    async fn plaintext_initialize_is_parse_error() {
+        let ctx = lite_ctx().await;
+        let HandleOutcome::Reply(s) = handle_json_line("initialize", &ctx).await else {
+            panic!("expected parse error reply");
+        };
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["error"]["code"], -32700);
+    }
+
+    #[tokio::test]
+    async fn unknown_method_returns_jsonrpc_method_not_found() {
+        let ctx = lite_ctx().await;
+        let line = r#"{"jsonrpc":"2.0","id":99,"method":"does/not_exist"}"#;
+        let HandleOutcome::Reply(s) = handle_json_line(line, &ctx).await else {
+            panic!("expected error reply");
+        };
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn initialize_without_jsonrpc_id_returns_invalid_request() {
+        let ctx = lite_ctx().await;
+        let line = r#"{"jsonrpc":"2.0","method":"initialize","params":{}}"#;
+        let HandleOutcome::Reply(s) = handle_json_line(line, &ctx).await else {
+            panic!("expected error reply");
+        };
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["error"]["code"], -32600);
     }
 
     #[tokio::test]
