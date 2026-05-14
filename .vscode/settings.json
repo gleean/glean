@@ -25,6 +25,7 @@
 		"Deque",
 		"embedder",
 		"fastembed",
-		"opencc"
+		"opencc",
+		"rerank"
 	]
 }

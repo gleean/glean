@@ -7,6 +7,7 @@
 mod digest_util;
 
 pub mod chunk;
+pub mod config;
 pub mod embed;
 pub mod engine;
 pub mod error;
@@ -17,6 +18,7 @@ pub mod store;
 pub mod sync;
 pub mod watcher;
 
+pub use config::GleanConfig;
 pub use embed::{DeterministicEmbedder, Embedder};
 pub use engine::GleanEngine;
 pub use error::{CoreError, StorageError};

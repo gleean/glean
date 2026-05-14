@@ -20,6 +20,7 @@ coverage
 .cursor
 .docs
 .fastembed_cache
+.glean
 
 # Vercel
 .vercel

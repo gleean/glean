@@ -35,6 +35,9 @@ pub enum CoreError {
     #[error("file too large (limit {limit} bytes): {path}")]
     FileTooLarge { path: PathBuf, limit: u64 },
 
+    #[error("invalid config TOML at {}: {message}", path.display())]
+    InvalidConfigToml { path: PathBuf, message: String },
+
     #[error("{0}")]
     Msg(String),
 }

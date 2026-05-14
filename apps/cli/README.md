@@ -13,6 +13,7 @@ For storage layout, MCP tools, and embedding behavior, see the [repository root 
 | **`glean daemon`** | Watch the workspace (via `glean-core` notify pipeline), debounce, and run incremental sync into LanceDB + SQLite under `GLEAN_STORAGE_ROOT`. |
 | **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Each stdin line must be valid JSON-RPC (plaintext like `initialize` is not accepted). Root `README.md` has **Manual stdin** echo examples. Do not write logs to **stdout** in this mode. |
 | **`glean logs`**   | Print the tail of rolling log files under `{GLEAN_STORAGE_ROOT}/logs/`. Options: `-n` / `--lines`, `--source cli` / `daemon` / `all`.        |
+| **`glean config`** | **`list`** (alias **`show`**): merged effective TOML to stdout. **`init`**: default writes **`$GLEAN_STORAGE_ROOT/config.toml`** (`~/.glean` when unset); with **`--workspace`**, writes **`<workspace>/.glean/config.toml`**. **`set KEY VALUE`**: patch one key in workspace `.glean/config.toml` only. Use **`--force`** on **`init`** to overwrite. |
 | **`glean status`** | Emit version via **`tracing`** (stderr); useful for quick sanity checks.                                                                     |
 
 Run **`glean --help`** and **`glean <command> --help`** for full Clap help.
@@ -23,7 +24,7 @@ Run **`glean --help`** and **`glean <command> --help`** for full Clap help.
 | -------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | **`GLEAN_STORAGE_ROOT`**   | daemon, MCP, logs                       | Index root (default `~/.glean`).                                                                    |
 | **`GLEAN_WORKSPACE_ROOT`** | daemon (`--workspace` alternative), MCP | Workspace boundary; daemon also accepts **`--workspace`** (defaults to cwd).                        |
-| **`RUST_LOG`**             | all                                     | `tracing` filter (e.g. `info`, `glean_core=debug`). Daemon defaults to **warn** on stderr if unset. |
+| **`GLEAN_LOG`**            | all                                     | `tracing` `EnvFilter` string (e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` default to **info**; daemon uses **info** for rolling files and **warn** on stderr. `RUST_LOG` is ignored. |
 
 ## Build
 

@@ -24,12 +24,18 @@ pub trait Embedder: Send + Sync {
 
 /// Default backend for CLI / daemon (requires the `fastembed` feature).
 #[cfg(feature = "fastembed")]
-pub fn default_embedder() -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
-    Ok(std::sync::Arc::new(FastembedEmbedder::new()?))
+pub fn default_embedder(
+    embedding: &crate::config::EmbeddingConfig,
+) -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
+    Ok(std::sync::Arc::new(FastembedEmbedder::new_from_config(
+        embedding,
+    )?))
 }
 
 #[cfg(not(feature = "fastembed"))]
-pub fn default_embedder() -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
+pub fn default_embedder(
+    _: &crate::config::EmbeddingConfig,
+) -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
     Err(CoreError::Msg(
         "glean-core was built without the `fastembed` feature; enable default features or `fastembed` and rebuild"
             .into(),

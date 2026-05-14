@@ -11,21 +11,25 @@ path = "src/lib.rs"
 
 [features]
 default = ["fastembed"]
-fastembed = ["dep:fastembed"]
+fastembed = ["dep:fastembed", "dep:ort"]
 
 [dependencies]
 arrow-array = "58"
 arrow-schema = "58"
 dirs = "6"
 fastembed = { version = "5", optional = true }
+# Same `ort` revision as `fastembed` for `ExecutionProviderDispatch` builders (`ort::ep`).
+ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["std", "ndarray", "api-24"] }
 futures = "0.3"
 ignore = "0.4"
 lance-index = "6.0"
 lancedb = "0.29"
 notify = "8.2.0"
 rusqlite = { version = "0.39", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
 sha2 = "0.11.0"
 thiserror = "2"
+toml = "1.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 walkdir = "2"

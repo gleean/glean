@@ -5,6 +5,7 @@
 
 pub mod dispatcher;
 pub mod gates;
+pub mod reranker;
 pub mod workspace_ignore;
 
 use std::path::Path;

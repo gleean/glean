@@ -1,7 +1,5 @@
 //! MCP stdio front-door: newline-delimited JSON-RPC; stdout carries protocol frames only.
 
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -9,20 +7,24 @@ use crate::mcp_protocol::router::{handle_json_line, McpSharedState};
 
 /// Run the MCP stdio server (invoked by `glean mcp`).
 pub async fn run_mcp_server() -> Result<()> {
-    let layout = glean_core::open_storage().context("open GLEAN_STORAGE_ROOT")?;
-    let engine = glean_core::GleanEngine::open_with_registry(
-        layout,
-        crate::parser_bootstrap::build_parser_registry(),
-    )
-    .await
-    .context("open glean engine")?;
-
     let workspace_root = std::env::var("GLEAN_WORKSPACE_ROOT")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .map(PathBuf::from)
+        .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().expect("resolve cwd"));
     let workspace_root = workspace_root.canonicalize().unwrap_or(workspace_root);
+
+    let runtime_config =
+        glean_core::GleanConfig::load_merged(&workspace_root).context("load glean config")?;
+
+    let layout = glean_core::open_storage().context("open GLEAN_STORAGE_ROOT")?;
+    let engine = glean_core::GleanEngine::open_with_registry_and_config(
+        layout,
+        crate::parser_bootstrap::build_parser_registry(),
+        runtime_config,
+    )
+    .await
+    .context("open glean engine")?;
 
     let ctx = McpSharedState {
         engine,

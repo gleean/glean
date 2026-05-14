@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::chunk::chunk_plain_text_markdown_mvp;
+use crate::config::GleanConfig;
 use crate::embed::Embedder;
 use crate::error::CoreError;
 use crate::parsers::ParserRegistry;
@@ -22,6 +23,8 @@ pub struct GleanEngine {
     embedder_slot: std::sync::Mutex<Option<Arc<dyn Embedder>>>,
     /// Registered file parsers (extension → implementation); builtins cover UTF-8 text types.
     parsers: Arc<ParserRegistry>,
+    /// Merged TOML + defaults; controls optional features such as stub rerank hooks.
+    runtime_config: GleanConfig,
 }
 
 impl GleanEngine {
@@ -30,7 +33,13 @@ impl GleanEngine {
     /// Uses the built-in community [`ParserRegistry`] only. To load `packages/enterprise`, build
     /// the CLI with `--features enterprise` and use [`Self::open_with_registry`].
     pub async fn open(layout: StorageLayout) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, None, Arc::new(ParserRegistry::with_builtins())).await
+        Self::open_inner(
+            layout,
+            None,
+            Arc::new(ParserRegistry::with_builtins()),
+            None,
+        )
+        .await
     }
 
     /// Inject an embedder (integration tests should prefer [`crate::DeterministicEmbedder`]).
@@ -42,6 +51,7 @@ impl GleanEngine {
             layout,
             Some(embedder),
             Arc::new(ParserRegistry::with_builtins()),
+            None,
         )
         .await
     }
@@ -51,7 +61,16 @@ impl GleanEngine {
         layout: StorageLayout,
         parsers: Arc<ParserRegistry>,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, None, parsers).await
+        Self::open_inner(layout, None, parsers, None).await
+    }
+
+    /// Same as [`Self::open_with_registry`] with an explicit merged [`GleanConfig`].
+    pub async fn open_with_registry_and_config(
+        layout: StorageLayout,
+        parsers: Arc<ParserRegistry>,
+        runtime_config: GleanConfig,
+    ) -> Result<Arc<Self>, CoreError> {
+        Self::open_inner(layout, None, parsers, Some(runtime_config)).await
     }
 
     /// Open with custom embedder and custom parser registry.
@@ -60,13 +79,14 @@ impl GleanEngine {
         embedder: Arc<dyn Embedder>,
         parsers: Arc<ParserRegistry>,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, Some(embedder), parsers).await
+        Self::open_inner(layout, Some(embedder), parsers, None).await
     }
 
     async fn open_inner(
         layout: StorageLayout,
         embedder: Option<Arc<dyn Embedder>>,
         parsers: Arc<ParserRegistry>,
+        runtime_config: Option<GleanConfig>,
     ) -> Result<Arc<Self>, CoreError> {
         layout.ensure_directories()?;
         let sqlite_path = layout.metadata_db_path();
@@ -86,6 +106,7 @@ impl GleanEngine {
             lance: Mutex::new(lance),
             embedder_slot: std::sync::Mutex::new(embedder),
             parsers,
+            runtime_config: runtime_config.unwrap_or_default(),
         }))
     }
 
@@ -95,7 +116,9 @@ impl GleanEngine {
             .lock()
             .map_err(|_| CoreError::Msg("embedder mutex poisoned".into()))?;
         if slot.is_none() {
-            *slot = Some(crate::embed::default_embedder()?);
+            *slot = Some(crate::embed::default_embedder(
+                &self.runtime_config.embedding,
+            )?);
         }
         Ok(slot
             .as_ref()
@@ -112,6 +135,11 @@ impl GleanEngine {
         &self.parsers
     }
 
+    /// Effective merged configuration for this engine instance.
+    pub fn runtime_config(&self) -> &GleanConfig {
+        &self.runtime_config
+    }
+
     /// Hybrid retrieval (BM25 on `text` + vector kNN, RRF) when FTS index exists; falls back to vector-only if hybrid fails.
     pub async fn semantic_search(
         &self,
@@ -125,7 +153,9 @@ impl GleanEngine {
         let embedder = self.embedder_or_init()?;
         let query_vec = embedder.embed_query(q)?;
         let db = self.lance.lock().await;
-        lance_chunks::semantic_search_chunks(&db, &query_vec, q, limit).await
+        let hits = lance_chunks::semantic_search_chunks(&db, &query_vec, q, limit).await?;
+        drop(db);
+        crate::pipeline::reranker::apply_cross_encoder_rerank(&self.runtime_config.rerank, q, hits)
     }
 
     /// Recent indexed paths from SQLite shadow metadata.

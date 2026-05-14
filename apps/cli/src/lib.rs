@@ -1,5 +1,6 @@
 //! Glean CLI as a library, reused by integration tests and the `main` binary.
 
+mod cmd_config;
 mod cmd_daemon;
 mod cmd_logs;
 mod cmd_mcp;
@@ -33,6 +34,14 @@ pub enum Commands {
     },
     /// MCP server over stdio (JSON-RPC 2.0).
     Mcp,
+    /// Inspect or scaffold TOML configuration (`list`/`set`: merge key; `init`: optional workspace target).
+    Config {
+        /// Workspace root for `list`/`set` merge (defaults to cwd or `GLEAN_WORKSPACE_ROOT`). For `init`, pass **`--workspace`** only when writing **`<workspace>/.glean/config.toml`**; omit it to write **`$GLEAN_STORAGE_ROOT/config.toml`** (default `~/.glean/config.toml`).
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+        #[command(subcommand)]
+        sub: ConfigCommands,
+    },
     /// Print rolling log file tail under `GLEAN_STORAGE_ROOT/logs`.
     Logs {
         /// Maximum lines to print from the newest matching log file.
@@ -49,9 +58,39 @@ pub enum Commands {
     Status,
 }
 
+#[derive(Subcommand)]
+pub enum ConfigCommands {
+    /// Print merged effective configuration as TOML (stdout).
+    #[command(visible_alias = "show")]
+    List,
+    /// Write config template: default `$GLEAN_STORAGE_ROOT/config.toml`, or `<workspace>/.glean/config.toml` when `--workspace` is set (`--force` overwrites).
+    Init {
+        /// Replace the target `config.toml` if it already exists.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Set one key in `<workspace>/.glean/config.toml` (creates the file if missing).
+    Set {
+        /// `SECTION.field`, e.g. `rerank.enabled`, `embedding.device`.
+        key: String,
+        /// Scalar: `true`, `42`, or a string (quote in shell if it contains spaces).
+        value: String,
+    },
+}
+
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Config { workspace, sub } => {
+            logging::init_logging(logging::LogRuntime::HumanStatus)?;
+            match sub {
+                ConfigCommands::List => cmd_config::run_config_list(workspace),
+                ConfigCommands::Init { force } => cmd_config::run_config_init(workspace, force),
+                ConfigCommands::Set { key, value } => {
+                    cmd_config::run_config_set(workspace, key, value)
+                }
+            }
+        }
         Commands::Logs {
             lines,
             source,

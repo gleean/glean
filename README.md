@@ -73,7 +73,8 @@ Environment:
 
 - **`GLEAN_STORAGE_ROOT`**: SQLite + Lance data (defaults to `~/.glean`).
 - **`GLEAN_WORKSPACE_ROOT`**: workspace boundary for MCP / daemon (optional; defaults to cwd).
-- **`RUST_LOG`**: optional filter for **`tracing`** on stderr and rolling files (e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` use **info** on stderr; **`glean daemon`** uses **warn** on stderr by default.
+- **`GLEAN_LOG`**: optional filter for **`tracing`** on stderr and rolling files (same syntax as `tracing_subscriber::EnvFilter`, e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` use **info** on both stderr and rolling files; **`glean daemon`** uses **info** for rolling files and **warn** on stderr. The `glean` binary does **not** read **`RUST_LOG`**.
+- **Runtime TOML** (optional): merged from `$GLEAN_STORAGE_ROOT/config.toml` then `<workspace>/.glean/config.toml` (workspace root is `GLEAN_WORKSPACE_ROOT` or cwd). Reserved keys such as `[rerank]` support future behavior; internal design notes live under `.docs/02-Developer-Guide/configuration-system.md` when that directory exists locally. **`glean config list`** (alias **`show`**) prints the merged effective config (stdout); **`glean config init`** writes a template to **`$GLEAN_STORAGE_ROOT/config.toml`** by default (typically **`~/.glean/config.toml`**), or to **`<workspace>/.glean/config.toml`** when **`--workspace`** is set (use **`--force`** to overwrite); **`glean config set SECTION.field value`** patches a single scalar in the workspace `.glean/config.toml` only.
 
 Rolling logs also land under **`{GLEAN_STORAGE_ROOT}/logs/`** (`cli.yyyy-mm-dd` / `daemon.yyyy-mm-dd`). Do not print diagnostics to **stdout** while running **`glean mcp`**. For quick inspection from a terminal, run **`glean logs`** (`-n` line count, `--source cli|daemon|all`); it does not install the tracing subscriber.
 

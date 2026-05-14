@@ -43,10 +43,16 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
         "opened storage layout",
     );
 
-    let engine =
-        GleanEngine::open_with_registry(layout, crate::parser_bootstrap::build_parser_registry())
-            .await
-            .context("open glean engine")?;
+    let runtime_config =
+        glean_core::GleanConfig::load_merged(&workspace).context("load glean config")?;
+
+    let engine = GleanEngine::open_with_registry_and_config(
+        layout,
+        crate::parser_bootstrap::build_parser_registry(),
+        runtime_config,
+    )
+    .await
+    .context("open glean engine")?;
     tracing::info!("glean engine opened");
 
     tracing::info!("running initial incremental sync");
