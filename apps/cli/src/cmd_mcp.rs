@@ -52,7 +52,8 @@ pub async fn run_mcp_server() -> Result<()> {
         if trimmed.is_empty() {
             continue;
         }
-        match handle_json_line(trimmed, &ctx).await {
+        let outcome: HandleOutcome = handle_json_line(trimmed, &ctx).await;
+        match outcome {
             HandleOutcome::Silent => {}
             HandleOutcome::Reply(response) => {
                 let out = format!("{response}\n");
