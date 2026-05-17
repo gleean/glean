@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use glean_core::pipeline::{run_incremental_sync, DEFAULT_MAX_FILE_BYTES, DEFAULT_MIN_FILE_BYTES};
+use glean_core::pipeline::run_incremental_sync;
 use glean_core::{DeterministicEmbedder, GleanEngine, StorageLayout};
 
 #[tokio::test]
@@ -23,14 +23,9 @@ async fn semantic_search_returns_indexed_chunk_for_query() {
     )
     .expect("write");
 
-    run_incremental_sync(
-        engine.as_ref(),
-        workspace.path(),
-        DEFAULT_MIN_FILE_BYTES,
-        DEFAULT_MAX_FILE_BYTES,
-    )
-    .await
-    .expect("sync");
+    run_incremental_sync(engine.as_ref(), workspace.path())
+        .await
+        .expect("sync");
 
     let hits = engine
         .semantic_search("unique723", 10)

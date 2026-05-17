@@ -18,9 +18,9 @@ pub enum LogRuntime {
     HumanStatus,
 }
 
-/// `(file_layer_filter, stderr_layer_filter)` from `GLEAN_LOG` or mode defaults.
-/// Product uses **`GLEAN_LOG`** only (not `RUST_LOG`).
-fn filters_for(mode: LogRuntime) -> Result<(EnvFilter, EnvFilter)> {
+/// `(file_layer_filter, stderr_layer_filter)` from `GLEAN_LOG`, merged TOML `[log].level`, or mode defaults.
+/// Product uses **`GLEAN_LOG`** only (not `RUST_LOG`); **`GLEAN_LOG` wins** when set.
+fn filters_for(mode: LogRuntime, toml_level: Option<&str>) -> Result<(EnvFilter, EnvFilter)> {
     if let Ok(s) = std::env::var("GLEAN_LOG") {
         if !s.trim().is_empty() {
             let f = EnvFilter::try_new(&s).map_err(|e| {
@@ -28,6 +28,15 @@ fn filters_for(mode: LogRuntime) -> Result<(EnvFilter, EnvFilter)> {
             })?;
             return Ok((f.clone(), f));
         }
+    }
+    if let Some(level) = toml_level.map(str::trim).filter(|s| !s.is_empty()) {
+        let f = EnvFilter::try_new(level).map_err(|e| {
+            anyhow::anyhow!("invalid [log].level in config (tracing EnvFilter syntax): {e}")
+        })?;
+        return match mode {
+            LogRuntime::Daemon => Ok((f.clone(), EnvFilter::new("warn"))),
+            LogRuntime::Mcp | LogRuntime::HumanStatus => Ok((f.clone(), f)),
+        };
     }
     match mode {
         LogRuntime::Daemon => Ok((EnvFilter::new("info"), EnvFilter::new("warn"))),
@@ -39,7 +48,10 @@ fn filters_for(mode: LogRuntime) -> Result<(EnvFilter, EnvFilter)> {
 }
 
 /// Build `{GLEAN_STORAGE_ROOT}/logs`, rolling appenders, stderr layer; leaks worker guard for process lifetime.
-pub fn init_logging(mode: LogRuntime) -> Result<()> {
+///
+/// When `toml_level` is set and `GLEAN_LOG` is unset, uses merged config `[log].level` for the file layer
+/// (daemon stderr stays `warn` unless `GLEAN_LOG` overrides both).
+pub fn init_logging(mode: LogRuntime, toml_level: Option<&str>) -> Result<()> {
     let layout =
         glean_core::StorageLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
     let log_dir = layout.root.join("logs");
@@ -53,7 +65,7 @@ pub fn init_logging(mode: LogRuntime) -> Result<()> {
     let file_appender = tracing_appender::rolling::daily(&log_dir, file_prefix);
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let (file_filter, stderr_filter) = filters_for(mode)?;
+    let (file_filter, stderr_filter) = filters_for(mode, toml_level)?;
 
     let init_result = match mode {
         LogRuntime::HumanStatus => {

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use glean_core::pipeline::{run_incremental_sync, DEFAULT_MAX_FILE_BYTES, DEFAULT_MIN_FILE_BYTES};
+use glean_core::pipeline::run_incremental_sync;
 use glean_core::{DeterministicEmbedder, GleanEngine, StorageLayout};
 
 #[tokio::test]
@@ -20,14 +20,9 @@ async fn deleting_workspace_file_purges_index_entry() {
     let path_txt = workspace.path().join("doc.txt");
     std::fs::write(&path_txt, "uniquepurge789 marker").expect("write");
 
-    run_incremental_sync(
-        engine.as_ref(),
-        workspace.path(),
-        DEFAULT_MIN_FILE_BYTES,
-        DEFAULT_MAX_FILE_BYTES,
-    )
-    .await
-    .expect("sync after write");
+    run_incremental_sync(engine.as_ref(), workspace.path())
+        .await
+        .expect("sync after write");
 
     let hits_before = engine
         .semantic_search("uniquepurge789", 10)
@@ -40,14 +35,9 @@ async fn deleting_workspace_file_purges_index_entry() {
 
     std::fs::remove_file(&path_txt).expect("remove");
 
-    run_incremental_sync(
-        engine.as_ref(),
-        workspace.path(),
-        DEFAULT_MIN_FILE_BYTES,
-        DEFAULT_MAX_FILE_BYTES,
-    )
-    .await
-    .expect("sync after delete");
+    run_incremental_sync(engine.as_ref(), workspace.path())
+        .await
+        .expect("sync after delete");
 
     let hits_after = engine
         .semantic_search("uniquepurge789", 10)

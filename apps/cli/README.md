@@ -13,8 +13,8 @@ For storage layout, MCP tools, and embedding behavior, see the [repository root 
 | **`glean daemon`** | Watch the workspace (via `glean-core` notify pipeline), debounce, and run incremental sync into LanceDB + SQLite under `GLEAN_STORAGE_ROOT`. |
 | **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Each stdin line must be valid JSON-RPC (plaintext like `initialize` is not accepted). Root `README.md` has **Manual stdin** echo examples. Do not write logs to **stdout** in this mode. |
 | **`glean logs`**   | Print the tail of rolling log files under `{GLEAN_STORAGE_ROOT}/logs/`. Options: `-n` / `--lines`, `--source cli` / `daemon` / `all`.        |
-| **`glean config`** | **`list`** (alias **`show`**): merged effective TOML to stdout. **`init`**: default writes **`$GLEAN_STORAGE_ROOT/config.toml`** (`~/.glean` when unset); with **`--workspace`**, writes **`<workspace>/.glean/config.toml`**. **`set KEY VALUE`**: patch one key in workspace `.glean/config.toml` only. Use **`--force`** on **`init`** to overwrite. |
-| **`glean status`** | Emit version via **`tracing`** (stderr); useful for quick sanity checks.                                                                     |
+| **`glean config`** | **`list`** (alias **`show`**): merged effective TOML to stdout. **`init`**: default writes **`$GLEAN_STORAGE_ROOT/config.toml`** (`~/.glean` when unset); with **`--workspace`**, writes **`<workspace>/.glean/config.toml`**. **`set KEY VALUE`**: patch workspace `.glean/config.toml`; **`--global`** writes storage-root `config.toml`. Use **`--force`** on **`init`** to overwrite. |
+| **`glean status`** | Version, storage root, config file presence, and reranker model readiness (stderr via **`tracing`**).                                                                     |
 
 Run **`glean --help`** and **`glean <command> --help`** for full Clap help.
 

@@ -1,15 +1,13 @@
 //! `glean daemon`: periodic reconcile driven by filesystem notifications.
 
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-
-use anyhow::{Context, Result};
 use tokio::signal;
 
-use glean_core::pipeline::{run_incremental_sync, DEFAULT_MAX_FILE_BYTES, DEFAULT_MIN_FILE_BYTES};
-use glean_core::{open_storage, GleanEngine};
+use glean_core::pipeline::run_incremental_sync;
+use glean_core::{open_storage, GleanConfig, GleanEngine};
 
 async fn shutdown_signal() {
     #[cfg(unix)]
@@ -28,7 +26,7 @@ async fn shutdown_signal() {
 }
 
 /// Watch `workspace`, debounce via timer, and apply incremental sync tasks.
-pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
+pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig) -> Result<()> {
     let workspace = workspace.unwrap_or_else(|| std::env::current_dir().expect("cwd"));
     let workspace = workspace.canonicalize().unwrap_or(workspace);
 
@@ -43,9 +41,6 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
         "opened storage layout",
     );
 
-    let runtime_config =
-        glean_core::GleanConfig::load_merged(&workspace).context("load glean config")?;
-
     let engine = GleanEngine::open_with_registry_and_config(
         layout,
         crate::parser_bootstrap::build_parser_registry(),
@@ -55,15 +50,22 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
     .context("open glean engine")?;
     tracing::info!("glean engine opened");
 
+    let indexing = engine.runtime_config().indexing.clone();
+    let (min_bytes, max_bytes) = indexing.sync_byte_limits();
+    let poll_interval = indexing.watch_poll_interval();
+
+    tracing::info!(
+        min_file_bytes = min_bytes,
+        max_file_bytes = max_bytes,
+        watch_interval_secs = indexing.watch_interval,
+        use_gitignore = indexing.use_gitignore,
+        "indexing config applied",
+    );
+
     tracing::info!("running initial incremental sync");
-    run_incremental_sync(
-        engine.as_ref(),
-        &workspace,
-        DEFAULT_MIN_FILE_BYTES,
-        DEFAULT_MAX_FILE_BYTES,
-    )
-    .await
-    .context("initial sync")?;
+    run_incremental_sync(engine.as_ref(), &workspace)
+        .await
+        .context("initial sync")?;
 
     tracing::info!("initial incremental sync finished");
 
@@ -74,29 +76,33 @@ pub async fn run_daemon(workspace: Option<PathBuf>) -> Result<()> {
         glean_core::watcher::install_recursive_workspace_watch(&workspace, Arc::clone(&dirt))
             .context("notify watcher")?;
 
+    let Some(poll) = poll_interval else {
+        tracing::info!(
+            workspace = %workspace.display(),
+            storage_root = %engine.layout().root.display(),
+            "watch_interval=0: periodic sync disabled; waiting for shutdown",
+        );
+        shutdown_signal().await;
+        tracing::info!("glean daemon shutting down");
+        return Ok(());
+    };
+
     tracing::info!(
         workspace = %workspace.display(),
         storage_root = %engine.layout().root.display(),
-        debounce_ms = 900_u64,
+        poll_interval_secs = poll.as_secs(),
         "glean daemon running; periodic sync enabled",
     );
 
-    let mut tick = tokio::time::interval(Duration::from_millis(900));
+    let mut tick = tokio::time::interval(poll);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
             _ = shutdown_signal() => break,
             _ = tick.tick() => {
                 if dirt.swap(false, Ordering::Relaxed) {
-                    if let Err(e) =
-                        run_incremental_sync(
-                            engine.as_ref(),
-                            &workspace,
-                            DEFAULT_MIN_FILE_BYTES,
-                            DEFAULT_MAX_FILE_BYTES,
-                        )
-                            .await
-                    {
+                    if let Err(e) = run_incremental_sync(engine.as_ref(), &workspace).await {
                         tracing::error!(error = %e, "incremental sync failed");
                     }
                 }

@@ -92,6 +92,28 @@ impl Default for IndexingConfig {
     }
 }
 
+impl IndexingConfig {
+    /// `(min, max)` byte bounds for workspace scan / incremental sync.
+    pub fn sync_byte_limits(&self) -> (u64, u64) {
+        use crate::pipeline::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MIN_FILE_BYTES};
+        let max = if self.max_file_size == 0 {
+            DEFAULT_MAX_FILE_BYTES
+        } else {
+            self.max_file_size
+        };
+        (DEFAULT_MIN_FILE_BYTES, max)
+    }
+
+    /// Daemon poll interval after filesystem notify; `None` when `watch_interval == 0` (initial sync only).
+    pub fn watch_poll_interval(&self) -> Option<std::time::Duration> {
+        if self.watch_interval == 0 {
+            None
+        } else {
+            Some(std::time::Duration::from_secs(self.watch_interval.max(1)))
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EmbeddingConfig {
     #[serde(default = "default_embed_model")]
@@ -359,6 +381,27 @@ level = "debug"
             }
             other => panic!("expected InvalidConfigToml, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn indexing_sync_byte_limits_uses_config_max() {
+        let cfg = IndexingConfig {
+            max_file_size: 2_000_000,
+            ..Default::default()
+        };
+        let (_, max) = cfg.sync_byte_limits();
+        assert_eq!(max, 2_000_000);
+    }
+
+    #[test]
+    fn watch_poll_interval_zero_disables_tick() {
+        let mut cfg = IndexingConfig {
+            watch_interval: 0,
+            ..Default::default()
+        };
+        assert!(cfg.watch_poll_interval().is_none());
+        cfg.watch_interval = 5;
+        assert_eq!(cfg.watch_poll_interval().unwrap().as_secs(), 5);
     }
 
     #[test]

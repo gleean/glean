@@ -122,13 +122,15 @@ pub fn scan_workspace(
 }
 
 /// Scan workspace, reconcile against SQLite shadow rows, then apply resulting tasks.
+///
+/// Uses [`GleanEngine::runtime_config`] indexing limits (`max_file_size`, `use_gitignore`).
 pub async fn run_incremental_sync(
     engine: &GleanEngine,
     workspace_root: &Path,
-    min_file_bytes: u64,
-    max_file_bytes: u64,
 ) -> Result<Vec<SyncTask>, CoreError> {
-    let workspace_ignore = WorkspaceIgnore::load(workspace_root)?;
+    let indexing = &engine.runtime_config().indexing;
+    let (min_file_bytes, max_file_bytes) = indexing.sync_byte_limits();
+    let workspace_ignore = WorkspaceIgnore::load(workspace_root, indexing.use_gitignore)?;
     let disk = scan_workspace(
         workspace_root,
         &workspace_ignore,
@@ -190,7 +192,7 @@ mod scan_tests {
         let root = dir.path();
         std::fs::write(root.join("a.md"), b"hello world markdown content").unwrap();
         std::fs::write(root.join("b.bin"), b"hello world bin contentxxxxxxxx").unwrap();
-        let ig = WorkspaceIgnore::load(root).unwrap();
+        let ig = WorkspaceIgnore::load(root, true).unwrap();
         let reg = ParserRegistry::with_builtins();
         let out = scan_workspace(
             root,
@@ -220,7 +222,7 @@ mod scan_tests {
         )
         .unwrap();
         std::fs::write(root.join("good.md"), b"yyyyyyyyyyyyyyyyyyyyyyyyyy").unwrap();
-        let ig = WorkspaceIgnore::load(root).unwrap();
+        let ig = WorkspaceIgnore::load(root, true).unwrap();
         let reg = ParserRegistry::with_builtins();
         let out = scan_workspace(
             root,
@@ -246,7 +248,7 @@ mod scan_tests {
         let dir = tempdir().expect("tmpdir");
         let root = dir.path();
         std::fs::write(root.join("evil.exe"), b"zzzzzzzzzzzzzzzzzzzzzzz").unwrap();
-        let ig = WorkspaceIgnore::load(root).unwrap();
+        let ig = WorkspaceIgnore::load(root, true).unwrap();
         let reg = ParserRegistry::with_builtins().with_parser(Arc::new(BadExeParser));
         let out = scan_workspace(
             root,

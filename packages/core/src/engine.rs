@@ -155,7 +155,12 @@ impl GleanEngine {
         let db = self.lance.lock().await;
         let hits = lance_chunks::semantic_search_chunks(&db, &query_vec, q, limit).await?;
         drop(db);
-        crate::pipeline::reranker::apply_cross_encoder_rerank(&self.runtime_config.rerank, q, hits)
+        crate::pipeline::reranker::apply_cross_encoder_rerank(
+            &self.runtime_config.rerank,
+            self.layout(),
+            q,
+            hits,
+        )
     }
 
     /// Recent indexed paths from SQLite shadow metadata.

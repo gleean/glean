@@ -61,6 +61,16 @@ impl StorageLayout {
     pub fn lancedb_uri(&self) -> PathBuf {
         self.lancedb_directory()
     }
+
+    /// Cross-encoder ONNX cache directory (`cache/reranker/` under storage root).
+    pub fn reranker_cache_dir(&self) -> PathBuf {
+        self.root.join("cache").join("reranker")
+    }
+
+    /// Global user config path (`config.toml` at storage root).
+    pub fn global_config_path(&self) -> PathBuf {
+        self.root.join("config.toml")
+    }
 }
 
 fn create_dir(path: &Path) -> Result<(), StorageError> {

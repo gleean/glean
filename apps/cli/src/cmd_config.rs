@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use toml::Value;
 
-fn resolve_workspace(workspace: Option<PathBuf>) -> Result<PathBuf> {
+/// Workspace root for config merge: `--workspace`, then `GLEAN_WORKSPACE_ROOT`, then cwd.
+pub fn resolve_workspace(workspace: Option<PathBuf>) -> Result<PathBuf> {
     let root = workspace
         .or_else(|| {
             std::env::var("GLEAN_WORKSPACE_ROOT")
@@ -148,15 +149,26 @@ pub fn run_config_init(workspace_flag: Option<PathBuf>, force: bool) -> Result<(
     Ok(())
 }
 
-/// Set a single scalar in `<workspace>/.glean/config.toml` (creates file and parent dirs if needed).
+/// Set a single scalar in workspace or global `config.toml` (creates parent dirs if needed).
 ///
 /// `KEY` is `section.field` (e.g. `rerank.enabled`). Values: `true`/`false`, integers, or strings (quote for spaces).
-pub fn run_config_set(workspace: Option<PathBuf>, key: String, value: String) -> Result<()> {
+pub fn run_config_set(
+    workspace: Option<PathBuf>,
+    key: String,
+    value: String,
+    global: bool,
+) -> Result<()> {
     let workspace = resolve_workspace(workspace)?;
     let (section, field) = parse_key_path(&key)?;
     validate_key(&section, &field)?;
 
-    let path = workspace_config_path(&workspace);
+    let path = if global {
+        let layout =
+            glean_core::StorageLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
+        layout.global_config_path()
+    } else {
+        workspace_config_path(&workspace)
+    };
     let mut root = if path.is_file() {
         let s =
             std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;

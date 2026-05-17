@@ -25,7 +25,13 @@
 		"Deque",
 		"embedder",
 		"fastembed",
+		"gleanignore",
+		"lancedb",
+		"ONNX",
 		"opencc",
-		"rerank"
+		"rerank",
+		"reranker",
+		"skipme",
+		"uniquepurge"
 	]
 }

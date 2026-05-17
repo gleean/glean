@@ -10,12 +10,14 @@ pub struct WorkspaceIgnore {
 }
 
 impl WorkspaceIgnore {
-    /// Loads `.gitignore` if present, then `.gleanignore` if present (later file wins on overlap).
-    pub fn load(workspace_root: &Path) -> Result<Self, ignore::Error> {
+    /// Loads ignore files under `workspace_root`. When `use_gitignore` is false, skips `.gitignore` but still loads `.gleanignore`.
+    pub fn load(workspace_root: &Path, use_gitignore: bool) -> Result<Self, ignore::Error> {
         let mut builder = GitignoreBuilder::new(workspace_root);
-        let gitignore = workspace_root.join(".gitignore");
-        if gitignore.is_file() {
-            builder.add(&gitignore);
+        if use_gitignore {
+            let gitignore = workspace_root.join(".gitignore");
+            if gitignore.is_file() {
+                builder.add(&gitignore);
+            }
         }
         let gleanignore = workspace_root.join(".gleanignore");
         if gleanignore.is_file() {
@@ -55,7 +57,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join(".gleanignore"), "*.env\n").unwrap();
-        let ig = WorkspaceIgnore::load(root).unwrap();
+        let ig = WorkspaceIgnore::load(root, true).unwrap();
         assert!(ig.is_ignored(Path::new("secrets.env"), false));
         assert!(!ig.is_ignored(Path::new(".github/ci.yml"), false));
     }
@@ -63,7 +65,7 @@ mod tests {
     #[test]
     fn dot_github_md_still_visible_without_ignore() {
         let dir = tempdir().unwrap();
-        let ig = WorkspaceIgnore::load(dir.path()).unwrap();
+        let ig = WorkspaceIgnore::load(dir.path(), true).unwrap();
         assert!(!ig.is_ignored(Path::new(".github/workflows/x.md"), false));
     }
 }

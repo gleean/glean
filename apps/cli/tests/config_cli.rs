@@ -49,6 +49,29 @@ fn glean_config_init_with_workspace_writes_project_dot_glean() {
 }
 
 #[test]
+fn glean_config_set_global_writes_storage_root_config() {
+    let storage_tmp = tempfile::tempdir().expect("tempdir");
+    let ws_tmp = tempfile::tempdir().expect("tempdir");
+
+    let set = Command::new(env!("CARGO_BIN_EXE_glean"))
+        .args(["config", "set", "--global", "log.level", "debug"])
+        .env("GLEAN_STORAGE_ROOT", storage_tmp.path())
+        .env("GLEAN_WORKSPACE_ROOT", ws_tmp.path())
+        .output()
+        .expect("spawn set global");
+
+    assert!(
+        set.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&set.stderr)
+    );
+
+    let path = storage_tmp.path().join("config.toml");
+    let text = std::fs::read_to_string(&path).expect("read global config");
+    assert!(text.contains("level = \"debug\"") || text.contains("level = 'debug'"));
+}
+
+#[test]
 fn glean_config_list_prints_toml() {
     let storage_tmp = tempfile::tempdir().expect("tempdir");
     let ws_tmp = tempfile::tempdir().expect("tempdir");

@@ -222,11 +222,11 @@ async fn handle_tools_call(id: Value, params: Option<Value>, ctx: &McpSharedStat
                 );
             };
             let path = PathBuf::from(fp);
-            match ctx.engine.read_file_context(
-                &ctx.workspace_root,
-                &path,
-                glean_core::pipeline::DEFAULT_MAX_FILE_BYTES,
-            ) {
+            let (_, max_read) = ctx.engine.runtime_config().indexing.sync_byte_limits();
+            match ctx
+                .engine
+                .read_file_context(&ctx.workspace_root, &path, max_read)
+            {
                 Ok(text) => ok_response(
                     id,
                     json!({
@@ -308,14 +308,9 @@ mod tests {
     async fn sample_ctx() -> McpSharedState {
         let ctx = lite_ctx().await;
         std::fs::write(ctx.workspace_root.join("note.txt"), "hello needle-token").unwrap();
-        glean_core::pipeline::run_incremental_sync(
-            ctx.engine.as_ref(),
-            &ctx.workspace_root,
-            glean_core::pipeline::DEFAULT_MIN_FILE_BYTES,
-            glean_core::pipeline::DEFAULT_MAX_FILE_BYTES,
-        )
-        .await
-        .unwrap();
+        glean_core::pipeline::run_incremental_sync(ctx.engine.as_ref(), &ctx.workspace_root)
+            .await
+            .unwrap();
         ctx
     }
 

@@ -4,13 +4,14 @@ mod cmd_config;
 mod cmd_daemon;
 mod cmd_logs;
 mod cmd_mcp;
+mod cmd_status;
 mod logging;
 pub mod mcp_protocol;
 mod parser_bootstrap;
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -69,12 +70,15 @@ pub enum ConfigCommands {
         #[arg(long)]
         force: bool,
     },
-    /// Set one key in `<workspace>/.glean/config.toml` (creates the file if missing).
+    /// Set one scalar in workspace or global `config.toml` (creates the file if missing).
     Set {
         /// `SECTION.field`, e.g. `rerank.enabled`, `embedding.device`.
         key: String,
         /// Scalar: `true`, `42`, or a string (quote in shell if it contains spaces).
         value: String,
+        /// Write `$GLEAN_STORAGE_ROOT/config.toml` instead of `<workspace>/.glean/config.toml`.
+        #[arg(long)]
+        global: bool,
     },
 }
 
@@ -82,12 +86,17 @@ pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Config { workspace, sub } => {
-            logging::init_logging(logging::LogRuntime::HumanStatus)?;
+            let ws = cmd_config::resolve_workspace(workspace.clone())?;
+            let cfg = glean_core::GleanConfig::load_merged(&ws).ok();
+            logging::init_logging(
+                logging::LogRuntime::HumanStatus,
+                cfg.as_ref().map(|c| c.log.level.as_str()),
+            )?;
             match sub {
                 ConfigCommands::List => cmd_config::run_config_list(workspace),
                 ConfigCommands::Init { force } => cmd_config::run_config_init(workspace, force),
-                ConfigCommands::Set { key, value } => {
-                    cmd_config::run_config_set(workspace, key, value)
+                ConfigCommands::Set { key, value, global } => {
+                    cmd_config::run_config_set(workspace, key, value, global)
                 }
             }
         }
@@ -97,17 +106,12 @@ pub async fn run() -> Result<()> {
             follow,
         } => cmd_logs::run_logs(source, lines, follow),
         Commands::Daemon { workspace } => {
-            logging::init_logging(logging::LogRuntime::Daemon)?;
-            cmd_daemon::run_daemon(workspace).await
+            let ws = cmd_config::resolve_workspace(workspace.clone())?;
+            let cfg = glean_core::GleanConfig::load_merged(&ws).context("load glean config")?;
+            logging::init_logging(logging::LogRuntime::Daemon, Some(&cfg.log.level))?;
+            cmd_daemon::run_daemon(workspace, cfg).await
         }
-        Commands::Mcp => {
-            logging::init_logging(logging::LogRuntime::Mcp)?;
-            cmd_mcp::run_mcp_server().await
-        }
-        Commands::Status => {
-            logging::init_logging(logging::LogRuntime::HumanStatus)?;
-            tracing::info!("glean {}", glean_core::VERSION);
-            Ok(())
-        }
+        Commands::Mcp => cmd_mcp::run_mcp_server().await,
+        Commands::Status => cmd_status::run_status().await,
     }
 }

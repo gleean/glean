@@ -17,6 +17,12 @@ pub async fn run_mcp_server() -> Result<()> {
     let runtime_config =
         glean_core::GleanConfig::load_merged(&workspace_root).context("load glean config")?;
 
+    crate::logging::init_logging(
+        crate::logging::LogRuntime::Mcp,
+        Some(runtime_config.log.level.as_str()),
+    )
+    .context("init logging")?;
+
     let layout = glean_core::open_storage().context("open GLEAN_STORAGE_ROOT")?;
     let engine = glean_core::GleanEngine::open_with_registry_and_config(
         layout,
