@@ -23,8 +23,8 @@ pub struct GleanEngine {
     embedder_slot: std::sync::Mutex<Option<Arc<dyn Embedder>>>,
     /// Registered file parsers (extension → implementation); builtins cover UTF-8 text types.
     parsers: Arc<ParserRegistry>,
-    /// Merged TOML + defaults; controls optional features such as stub rerank hooks.
-    runtime_config: GleanConfig,
+    /// Merged TOML + defaults; updated by daemon config hot-reload.
+    runtime_config: std::sync::RwLock<GleanConfig>,
 }
 
 impl GleanEngine {
@@ -106,7 +106,7 @@ impl GleanEngine {
             lance: Mutex::new(lance),
             embedder_slot: std::sync::Mutex::new(embedder),
             parsers,
-            runtime_config: runtime_config.unwrap_or_default(),
+            runtime_config: std::sync::RwLock::new(runtime_config.unwrap_or_default()),
         }))
     }
 
@@ -117,7 +117,7 @@ impl GleanEngine {
             .map_err(|_| CoreError::Msg("embedder mutex poisoned".into()))?;
         if slot.is_none() {
             *slot = Some(crate::embed::default_embedder(
-                &self.runtime_config.embedding,
+                &self.runtime_config().embedding,
             )?);
         }
         Ok(slot
@@ -136,8 +136,20 @@ impl GleanEngine {
     }
 
     /// Effective merged configuration for this engine instance.
-    pub fn runtime_config(&self) -> &GleanConfig {
-        &self.runtime_config
+    pub fn runtime_config(&self) -> std::sync::RwLockReadGuard<'_, GleanConfig> {
+        self.runtime_config
+            .read()
+            .map_err(|_| ())
+            .expect("runtime_config lock poisoned")
+    }
+
+    /// Replace merged config (daemon hot-reload). Embedding / rerank sessions are not reset.
+    pub fn reload_runtime_config(&self, cfg: GleanConfig) -> Result<(), CoreError> {
+        *self
+            .runtime_config
+            .write()
+            .map_err(|_| CoreError::Msg("runtime_config lock poisoned".into()))? = cfg;
+        Ok(())
     }
 
     /// Hybrid retrieval (BM25 on `text` + vector kNN, RRF) when FTS index exists; falls back to vector-only if hybrid fails.
@@ -156,7 +168,7 @@ impl GleanEngine {
         let hits = lance_chunks::semantic_search_chunks(&db, &query_vec, q, limit).await?;
         drop(db);
         crate::pipeline::reranker::apply_cross_encoder_rerank(
-            &self.runtime_config.rerank,
+            &self.runtime_config().rerank,
             self.layout(),
             q,
             hits,

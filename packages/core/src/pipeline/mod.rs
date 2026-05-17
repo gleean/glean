@@ -128,7 +128,7 @@ pub async fn run_incremental_sync(
     engine: &GleanEngine,
     workspace_root: &Path,
 ) -> Result<Vec<SyncTask>, CoreError> {
-    let indexing = &engine.runtime_config().indexing;
+    let indexing = engine.runtime_config().indexing.clone();
     let (min_file_bytes, max_file_bytes) = indexing.sync_byte_limits();
     let workspace_ignore = WorkspaceIgnore::load(workspace_root, indexing.use_gitignore)?;
     let disk = scan_workspace(

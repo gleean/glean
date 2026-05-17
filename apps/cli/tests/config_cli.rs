@@ -96,6 +96,31 @@ fn glean_config_list_prints_toml() {
         stdout.contains("rerank") || stdout.contains("embedding"),
         "expected config sections in stdout: {stdout:?}"
     );
+    assert!(
+        stdout.contains("source: default") || stdout.contains("source: workspace"),
+        "expected provenance comments: {stdout:?}"
+    );
+}
+
+#[test]
+fn glean_config_list_plain_omits_provenance() {
+    let storage_tmp = tempfile::tempdir().expect("tempdir");
+    let ws_tmp = tempfile::tempdir().expect("tempdir");
+    let out = Command::new(env!("CARGO_BIN_EXE_glean"))
+        .args([
+            "config",
+            "--workspace",
+            ws_tmp.path().to_str().unwrap(),
+            "list",
+            "--plain",
+        ])
+        .env("GLEAN_STORAGE_ROOT", storage_tmp.path())
+        .output()
+        .expect("spawn");
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    assert!(!stdout.contains("source: default"));
 }
 
 #[test]

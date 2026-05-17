@@ -1,8 +1,9 @@
 //! Merged runtime configuration from defaults, storage-root `config.toml`,
 //! and workspace `.glean/config.toml` (see internal `configuration-system.md` design).
 
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
@@ -196,7 +197,93 @@ impl Default for LogConfig {
     }
 }
 
+/// Which merge layer owns a TOML section in the effective config (section-level, not per-field).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfigLayer {
+    Default,
+    Global,
+    Workspace,
+}
+
+impl ConfigLayer {
+    /// Stable label for CLI comments and tests.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Global => "global",
+            Self::Workspace => "workspace",
+        }
+    }
+}
+
+const CONFIG_SECTIONS: &[&str] = &["core", "indexing", "embedding", "rerank", "log"];
+
+fn read_config_root_table(path: &Path) -> Result<Option<Map<String, Value>>, CoreError> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path).map_err(|e| CoreError::InvalidConfigToml {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+    let value: Value = toml::from_str(&text).map_err(|e| CoreError::InvalidConfigToml {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+    match value {
+        Value::Table(t) => Ok(Some(t)),
+        _ => Err(CoreError::InvalidConfigToml {
+            path: path.to_path_buf(),
+            message: "root must be a TOML table".into(),
+        }),
+    }
+}
+
+fn section_layer_from_tables(
+    global: Option<&Map<String, Value>>,
+    workspace: Option<&Map<String, Value>>,
+    section: &str,
+) -> ConfigLayer {
+    if workspace.is_some_and(|m| m.contains_key(section)) {
+        ConfigLayer::Workspace
+    } else if global.is_some_and(|m| m.contains_key(section)) {
+        ConfigLayer::Global
+    } else {
+        ConfigLayer::Default
+    }
+}
+
 impl GleanConfig {
+    /// Section-level provenance for `glean config list --show-sources`.
+    pub fn section_provenance(
+        workspace_root: &Path,
+        layout: &StorageLayout,
+    ) -> Result<HashMap<String, ConfigLayer>, CoreError> {
+        let global_path = layout.root.join("config.toml");
+        let workspace_path = workspace_root.join(".glean").join("config.toml");
+        let global = read_config_root_table(&global_path)?;
+        let workspace = read_config_root_table(&workspace_path)?;
+        let mut out = HashMap::new();
+        for &section in CONFIG_SECTIONS {
+            out.insert(
+                section.to_string(),
+                section_layer_from_tables(global.as_ref(), workspace.as_ref(), section),
+            );
+        }
+        Ok(out)
+    }
+
+    /// Paths checked for provenance and daemon hot-reload (global then workspace).
+    pub fn config_watch_paths(
+        workspace_root: &Path,
+        layout: &StorageLayout,
+    ) -> (PathBuf, PathBuf) {
+        (
+            layout.root.join("config.toml"),
+            workspace_root.join(".glean").join("config.toml"),
+        )
+    }
+
     /// Merge defaults with `layout.root/config.toml` then `<workspace_root>/.glean/config.toml`.
     /// Later tables override earlier keys at each section level.
     pub fn load_merged_with_layout(
@@ -402,6 +489,38 @@ level = "debug"
         assert!(cfg.watch_poll_interval().is_none());
         cfg.watch_interval = 5;
         assert_eq!(cfg.watch_poll_interval().unwrap().as_secs(), 5);
+    }
+
+    #[test]
+    fn section_provenance_marks_workspace_rerank() {
+        let tmp = tempdir().unwrap();
+        let storage = tmp.path().join("s");
+        fs::create_dir_all(&storage).unwrap();
+        let layout = StorageLayout::from_root(&storage);
+
+        fs::write(
+            storage.join("config.toml"),
+            r#"
+[rerank]
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        let ws = tmp.path().join("w");
+        fs::create_dir_all(ws.join(".glean")).unwrap();
+        fs::write(
+            ws.join(".glean/config.toml"),
+            r#"
+[rerank]
+enabled = true
+"#,
+        )
+        .unwrap();
+
+        let prov = GleanConfig::section_provenance(&ws, &layout).expect("provenance");
+        assert_eq!(prov.get("rerank").copied(), Some(ConfigLayer::Workspace));
+        assert_eq!(prov.get("core").copied(), Some(ConfigLayer::Default));
     }
 
     #[test]

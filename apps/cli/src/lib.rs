@@ -4,6 +4,7 @@ mod cmd_config;
 mod cmd_daemon;
 mod cmd_logs;
 mod cmd_mcp;
+mod cmd_models;
 mod cmd_status;
 mod logging;
 pub mod mcp_protocol;
@@ -57,13 +58,34 @@ pub enum Commands {
     },
     /// Print version to stderr.
     Status,
+    /// Download optional model artifacts into `$GLEAN_STORAGE_ROOT`.
+    Models {
+        #[command(subcommand)]
+        sub: ModelsCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModelsCommands {
+    /// Fetch model files (e.g. `rerank` → BGE cache under `cache/reranker/`).
+    Pull {
+        /// Model kind: `rerank`.
+        model: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum ConfigCommands {
     /// Print merged effective configuration as TOML (stdout).
     #[command(visible_alias = "show")]
-    List,
+    List {
+        /// Annotate each TOML section with `default` / `global` / `workspace` provenance.
+        #[arg(long, default_value_t = true)]
+        show_sources: bool,
+        /// Omit section provenance comments (machine-friendly TOML only).
+        #[arg(long, conflicts_with = "show_sources")]
+        plain: bool,
+    },
     /// Write config template: default `$GLEAN_STORAGE_ROOT/config.toml`, or `<workspace>/.glean/config.toml` when `--workspace` is set (`--force` overwrites).
     Init {
         /// Replace the target `config.toml` if it already exists.
@@ -93,7 +115,10 @@ pub async fn run() -> Result<()> {
                 cfg.as_ref().map(|c| c.log.level.as_str()),
             )?;
             match sub {
-                ConfigCommands::List => cmd_config::run_config_list(workspace),
+                ConfigCommands::List {
+                    show_sources,
+                    plain,
+                } => cmd_config::run_config_list(workspace, show_sources && !plain),
                 ConfigCommands::Init { force } => cmd_config::run_config_init(workspace, force),
                 ConfigCommands::Set { key, value, global } => {
                     cmd_config::run_config_set(workspace, key, value, global)
@@ -113,5 +138,8 @@ pub async fn run() -> Result<()> {
         }
         Commands::Mcp => cmd_mcp::run_mcp_server().await,
         Commands::Status => cmd_status::run_status().await,
+        Commands::Models { sub } => match sub {
+            ModelsCommands::Pull { model } => cmd_models::run_models_pull(&model),
+        },
     }
 }

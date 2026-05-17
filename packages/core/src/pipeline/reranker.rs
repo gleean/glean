@@ -2,13 +2,15 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::config::RerankConfig;
 use crate::error::CoreError;
 use crate::storage::StorageLayout;
 
 const RERANK_TIMEOUT_MS: u64 = 1500;
+/// Drop cached ONNX session after this idle period (see `reranking-strategy.md`).
+const RERANK_SESSION_IDLE_SECS: u64 = 600;
 
 /// Resolve `[rerank].model_path` relative to **`$GLEAN_STORAGE_ROOT`** (absolute paths unchanged).
 pub fn resolve_rerank_model_path(layout: &StorageLayout, cfg: &RerankConfig) -> PathBuf {
@@ -26,6 +28,9 @@ pub fn onnx_model_exists(path: &Path) -> bool {
 }
 
 /// Best-effort low-power detection; skips rerank when likely on battery saver.
+///
+/// **Platform note:** only macOS runs `pmset -g batt` today. Windows/Linux have no
+/// equivalent probe in OSS; callers should treat this as a no-op off macOS.
 fn low_power_mode_active() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -162,21 +167,61 @@ fn rerank_with_fastembed(
 }
 
 #[cfg(feature = "fastembed")]
+struct RerankSession {
+    reranker: fastembed::TextRerank,
+    last_used: Instant,
+}
+
+#[cfg(feature = "fastembed")]
 fn with_reranker<R>(
     model_path: &Path,
     cache_dir: &Path,
     f: impl FnOnce(&mut fastembed::TextRerank) -> Result<R, CoreError>,
 ) -> Result<R, CoreError> {
-    static SLOT: OnceLock<Mutex<Option<fastembed::TextRerank>>> = OnceLock::new();
+    static SLOT: OnceLock<Mutex<Option<RerankSession>>> = OnceLock::new();
     let mutex = SLOT.get_or_init(|| Mutex::new(None));
     let mut guard = mutex
         .lock()
         .map_err(|_| CoreError::Msg("reranker mutex poisoned".into()))?;
-    if guard.is_none() {
-        *guard = Some(load_reranker(model_path, cache_dir)?);
+    let idle = Duration::from_secs(RERANK_SESSION_IDLE_SECS);
+    if guard
+        .as_ref()
+        .is_some_and(|s| s.last_used.elapsed() >= idle)
+    {
+        tracing::debug!(
+            target: "glean_rerank",
+            idle_secs = RERANK_SESSION_IDLE_SECS,
+            "dropping idle rerank session"
+        );
+        *guard = None;
     }
-    let reranker = guard.as_mut().expect("reranker slot");
-    f(reranker)
+    if guard.is_none() {
+        *guard = Some(RerankSession {
+            reranker: load_reranker(model_path, cache_dir)?,
+            last_used: Instant::now(),
+        });
+    }
+    let session = guard.as_mut().expect("reranker slot");
+    session.last_used = Instant::now();
+    f(&mut session.reranker)
+}
+
+/// Pre-download BGE reranker assets into `layout.reranker_cache_dir()` (FastEmbed / HF hub).
+#[cfg(feature = "fastembed")]
+pub fn pull_bge_rerank_model(layout: &StorageLayout) -> Result<PathBuf, CoreError> {
+    let cache_dir = layout.reranker_cache_dir();
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|e| CoreError::Msg(format!("mkdir rerank cache: {e}")))?;
+    let dummy = layout.root.join("models/reranker/bge-v2-m3.onnx");
+    let _ = load_reranker(&dummy, &cache_dir)?;
+    Ok(cache_dir)
+}
+
+#[cfg(not(feature = "fastembed"))]
+pub fn pull_bge_rerank_model(_layout: &StorageLayout) -> Result<PathBuf, CoreError> {
+    Err(CoreError::Msg(
+        "rerank model pull requires glean-core built with feature `fastembed`".into(),
+    ))
 }
 
 #[cfg(feature = "fastembed")]

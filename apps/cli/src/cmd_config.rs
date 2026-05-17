@@ -97,11 +97,38 @@ fn parse_scalar(raw: &str) -> Result<Value> {
     Ok(Value::String(t.to_string()))
 }
 
+fn format_section_provenance(
+    workspace: &std::path::Path,
+    layout: &glean_core::StorageLayout,
+) -> Result<String> {
+    let prov = glean_core::GleanConfig::section_provenance(workspace, layout)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let mut lines = vec![
+        "# Glean effective configuration".to_string(),
+        "# Section provenance (later overrides earlier: default < global < workspace)".to_string(),
+    ];
+    for section in ["core", "indexing", "embedding", "rerank", "log"] {
+        let layer = prov
+            .get(section)
+            .copied()
+            .unwrap_or(glean_core::ConfigLayer::Default);
+        lines.push(format!("# [{section}] source: {}", layer.as_str()));
+    }
+    Ok(lines.join("\n"))
+}
+
 /// Print merged `GleanConfig` as TOML (stdout).
-pub fn run_config_list(workspace: Option<PathBuf>) -> Result<()> {
+pub fn run_config_list(workspace: Option<PathBuf>, show_sources: bool) -> Result<()> {
     let workspace = resolve_workspace(workspace)?;
-    let cfg =
-        glean_core::GleanConfig::load_merged(&workspace).context("load merged Glean config")?;
+    let layout =
+        glean_core::StorageLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
+    let cfg = glean_core::GleanConfig::load_merged_with_layout(&workspace, &layout)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("load merged Glean config")?;
+    if show_sources {
+        let header = format_section_provenance(&workspace, &layout)?;
+        print!("{header}\n\n");
+    }
     let text =
         toml::to_string(&cfg).context("serialize effective config as TOML (internal error)")?;
     print!("{text}");
