@@ -2508,12 +2508,12 @@ dependencies = [
  "anyhow",
  "clap",
  "glean-core",
- "glean-enterprise",
+ "glean-host",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
- "toml",
+ "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -2549,6 +2549,22 @@ name = "glean-enterprise"
 version = "0.1.0"
 dependencies = [
  "glean-core",
+]
+
+[[package]]
+name = "glean-host"
+version = "0.1.0"
+dependencies = [
+ "glean-core",
+ "glean-enterprise",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -6408,6 +6424,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

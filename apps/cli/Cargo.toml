@@ -17,20 +17,20 @@ path = "src/main.rs"
 
 [features]
 default = []
-enterprise = ["dep:glean-enterprise"]
+enterprise = ["glean-host/enterprise"]
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 glean-core = { path = "../../packages/core" }
-glean-enterprise = { path = "../../packages/enterprise", optional = true }
+glean-host = { path = "../../packages/host" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = { version = "1.1", default-features = false, features = ["serde"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "rt-multi-thread", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
+serde_json = "1"
 tempfile = "3"

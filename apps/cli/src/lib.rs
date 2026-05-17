@@ -7,8 +7,6 @@ mod cmd_mcp;
 mod cmd_models;
 mod cmd_status;
 mod logging;
-pub mod mcp_protocol;
-mod parser_bootstrap;
 
 use std::path::PathBuf;
 

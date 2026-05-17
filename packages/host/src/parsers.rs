@@ -1,10 +1,11 @@
-//! Builds the parser registry for this process: community plus optional **`glean-enterprise`**.
+//! Parser registry assembly (community + optional enterprise).
 
 use std::sync::Arc;
 
 use glean_core::parsers::ParserRegistry;
 
-pub(crate) fn build_parser_registry() -> Arc<ParserRegistry> {
+/// Built-in community parsers, optionally augmented by `glean-enterprise` when feature `enterprise` is enabled.
+pub fn build_default_registry() -> Arc<ParserRegistry> {
     #[cfg(not(feature = "enterprise"))]
     {
         Arc::new(ParserRegistry::with_builtins())

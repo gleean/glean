@@ -1,69 +1,54 @@
 //! `glean status`: human-readable runtime summary on stderr.
 
 use anyhow::{Context, Result};
-use glean_core::{GleanConfig, GlobalLayout, WorkspaceIndexLayout};
-
-use crate::cmd_config;
 
 /// Print version, storage layout, config presence, and reranker readiness hints.
 pub async fn run_status() -> Result<()> {
-    let workspace = cmd_config::resolve_workspace(None)?;
-    let cfg = GleanConfig::load_merged().context("load merged config")?;
+    let report = glean_host::status::collect_status().context("collect status")?;
 
     crate::logging::init_logging(
         crate::logging::LogRuntime::HumanStatus,
-        Some(cfg.log.level.as_str()),
+        Some(report.log_level.as_str()),
     )?;
 
-    let global = GlobalLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
-    let index = WorkspaceIndexLayout::for_workspace(&workspace);
-    let global_config = global.global_config_path();
-    let index_db = index.metadata_db_path();
-    let index_vectors = index.lancedb_directory();
-    let rerank_path =
-        glean_core::pipeline::reranker::resolve_rerank_model_path(&global, &cfg.rerank);
-    let rerank_ready = glean_core::pipeline::reranker::onnx_model_exists(&rerank_path);
-
-    let deprecated_ws_config = workspace.join(".glean").join("config.toml");
-
-    tracing::info!("glean {}", glean_core::VERSION);
-    tracing::info!(storage_root = %global.root.display(), "GLEAN_STORAGE_ROOT");
+    tracing::info!("glean {}", report.version);
+    tracing::info!(storage_root = %report.storage_root.display(), "GLEAN_STORAGE_ROOT");
     tracing::info!(
-        workspace = %workspace.display(),
-        index_root = %index.root.display(),
+        workspace = %report.workspace_root.display(),
+        index_root = %report.index_root.display(),
         "workspace index",
     );
     tracing::info!(
-        index_db = index_db.is_file(),
-        path = %index_db.display(),
+        index_db = report.index_db_exists,
+        path = %report.index_db_path.display(),
         "workspace index.db",
     );
     tracing::info!(
-        index_vectors = index_vectors.is_dir(),
-        path = %index_vectors.display(),
+        index_vectors = report.index_vectors_exists,
+        path = %report.index_vectors_path.display(),
         "workspace vectors",
     );
     tracing::info!(
-        global_config = global_config.is_file(),
-        path = %global_config.display(),
+        global_config = report.global_config_exists,
+        path = %report.global_config_path.display(),
         "global config.toml",
     );
-    if deprecated_ws_config.is_file() {
+    if let Some(path) = &report.deprecated_workspace_config {
         tracing::warn!(
-            path = %deprecated_ws_config.display(),
+            path = %path.display(),
             "deprecated workspace config.toml is ignored; merge keys into global config.toml and remove this file",
         );
     }
-    if global.legacy_index_present() {
+    if report.legacy_global_index {
         tracing::warn!(
-            storage_root = %global.root.display(),
+            storage_root = %report.storage_root.display(),
             "legacy index under GLEAN_STORAGE_ROOT (metadata/ or vectors/); move to <workspace>/.glean/ or delete and reindex",
         );
     }
     tracing::info!(
-        rerank_enabled = cfg.rerank.enabled,
-        rerank_model_path = %rerank_path.display(),
-        rerank_model_ready = rerank_ready,
+        rerank_enabled = report.rerank_enabled,
+        rerank_model_path = %report.rerank_model_path.display(),
+        rerank_model_ready = report.rerank_model_ready,
         "reranker",
     );
     Ok(())

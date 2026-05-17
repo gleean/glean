@@ -2,6 +2,14 @@
 
 Glean is a **local-first knowledge engine** with a Rust core. This repository is still early-stage; the current milestone focuses on a working Cargo workspace and an MCP-compatible **stdio** server (`glean mcp`).
 
+## Workspace layout
+
+| Crate | Role |
+|-------|------|
+| [`packages/core`](packages/core) | Indexing engine: LanceDB, SQLite shadow, `GleanEngine`, pipeline |
+| [`packages/host`](packages/host) | Host runtime: daemon loop, MCP router, config editor, status |
+| [`apps/cli`](apps/cli) | Single `glean` binary: Clap, stdio MCP transport, logging subscriber |
+
 ## Building
 
 Prerequisites: Rust **stable 1.91+** (`rustup`), `cargo`, and **`protoc`** (Protocol Buffers compiler - required by LanceDB's Rust dependency chain). On macOS: `brew install protobuf`; on Debian/Ubuntu: `sudo apt-get install protobuf-compiler`.
@@ -46,7 +54,7 @@ printf '%s\n%s\n' \
 MCP behaviour is awkward to poke interactively because **stdin needs JSON lines**. Use the bundled tests instead:
 
 - **Fast in-process tests** (`handle_json_line`):  
-  `cargo test -p glean-cli mcp_protocol::router`
+  `cargo test -p glean-host mcp::router`
 - **Real subprocess + temp storage** (`CARGO_BIN_EXE_glean` stdio framing):  
   `cargo test -p glean-cli --test mcp_subprocess`
 

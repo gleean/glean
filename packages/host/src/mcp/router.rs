@@ -5,11 +5,12 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::mcp_protocol::types::{jsonrpc_error, parse_error_response, JsonRpcRequest};
+use crate::mcp::types::{jsonrpc_error, parse_error_response, JsonRpcRequest};
+use glean_core::GleanEngine;
 
 /// Shared MCP runtime (storage engine + workspace boundary).
 pub struct McpSharedState {
-    pub engine: Arc<glean_core::GleanEngine>,
+    pub engine: Arc<GleanEngine>,
     pub workspace_root: PathBuf,
 }
 
@@ -43,7 +44,6 @@ pub async fn handle_json_line(line: &str, ctx: &McpSharedState) -> HandleOutcome
         ));
     }
 
-    // Notifications have no `id`; nothing goes back on stdout.
     if req.id.is_none() {
         match req.method.as_str() {
             "notifications/initialized" | "notifications/cancelled" => {
@@ -289,7 +289,6 @@ mod tests {
     async fn lite_ctx() -> McpSharedState {
         use std::sync::Arc;
 
-        // Keep directories after this returns: naive `TempDir` drop would delete them mid-test.
         let workspace_path = tempfile::tempdir().unwrap().keep();
         let layout = glean_core::WorkspaceIndexLayout::for_workspace(&workspace_path);
         let engine = glean_core::GleanEngine::open_with_embedder(
