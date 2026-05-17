@@ -290,9 +290,8 @@ mod tests {
         use std::sync::Arc;
 
         // Keep directories after this returns: naive `TempDir` drop would delete them mid-test.
-        let storage_path = tempfile::tempdir().unwrap().keep();
         let workspace_path = tempfile::tempdir().unwrap().keep();
-        let layout = glean_core::StorageLayout::from_root(&storage_path);
+        let layout = glean_core::WorkspaceIndexLayout::for_workspace(&workspace_path);
         let engine = glean_core::GleanEngine::open_with_embedder(
             layout,
             Arc::new(glean_core::DeterministicEmbedder::new()),

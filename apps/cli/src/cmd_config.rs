@@ -1,11 +1,11 @@
-//! `glean config`: print merged config, scaffold global or workspace TOML, or patch a workspace key.
+//! `glean config`: print merged config, scaffold global TOML, or patch global keys.
 
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use toml::Value;
 
-/// Workspace root for config merge: `--workspace`, then `GLEAN_WORKSPACE_ROOT`, then cwd.
+/// Workspace root for daemon/MCP: `--workspace`, then `GLEAN_WORKSPACE_ROOT`, then cwd.
 pub fn resolve_workspace(workspace: Option<PathBuf>) -> Result<PathBuf> {
     let root = workspace
         .or_else(|| {
@@ -18,12 +18,8 @@ pub fn resolve_workspace(workspace: Option<PathBuf>) -> Result<PathBuf> {
     Ok(root.canonicalize().unwrap_or(root))
 }
 
-fn workspace_config_path(workspace: &std::path::Path) -> PathBuf {
-    workspace.join(".glean").join("config.toml")
-}
-
 /// Default template: mirrors `GleanConfig::default()` (see `glean-core` `config/mod.rs`).
-const CONFIG_INIT_TEMPLATE: &str = r#"# Glean TOML (merge order: defaults → $GLEAN_STORAGE_ROOT/config.toml → <workspace>/.glean/config.toml).
+const CONFIG_INIT_TEMPLATE: &str = r#"# Glean TOML (merge order: defaults → $GLEAN_STORAGE_ROOT/config.toml).
 # See repository README for environment variables.
 
 [core]
@@ -97,15 +93,12 @@ fn parse_scalar(raw: &str) -> Result<Value> {
     Ok(Value::String(t.to_string()))
 }
 
-fn format_section_provenance(
-    workspace: &std::path::Path,
-    layout: &glean_core::StorageLayout,
-) -> Result<String> {
-    let prov = glean_core::GleanConfig::section_provenance(workspace, layout)
+fn format_section_provenance(global: &glean_core::GlobalLayout) -> Result<String> {
+    let prov = glean_core::GleanConfig::section_provenance(global)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let mut lines = vec![
         "# Glean effective configuration".to_string(),
-        "# Section provenance (later overrides earlier: default < global < workspace)".to_string(),
+        "# Section provenance (later overrides earlier: default < global)".to_string(),
     ];
     for section in ["core", "indexing", "embedding", "rerank", "log"] {
         let layer = prov
@@ -118,15 +111,13 @@ fn format_section_provenance(
 }
 
 /// Print merged `GleanConfig` as TOML (stdout).
-pub fn run_config_list(workspace: Option<PathBuf>, show_sources: bool) -> Result<()> {
-    let workspace = resolve_workspace(workspace)?;
-    let layout =
-        glean_core::StorageLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
-    let cfg = glean_core::GleanConfig::load_merged_with_layout(&workspace, &layout)
+pub fn run_config_list(_workspace: Option<PathBuf>, show_sources: bool) -> Result<()> {
+    let global = glean_core::GlobalLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
+    let cfg = glean_core::GleanConfig::load_merged_with_global(&global)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("load merged Glean config")?;
     if show_sources {
-        let header = format_section_provenance(&workspace, &layout)?;
+        let header = format_section_provenance(&global)?;
         print!("{header}\n\n");
     }
     let text =
@@ -135,22 +126,10 @@ pub fn run_config_list(workspace: Option<PathBuf>, show_sources: bool) -> Result
     Ok(())
 }
 
-/// Initialize a config file from the built-in template (`--force` overwrites).
-///
-/// - **No `--workspace`** on `glean config`: writes **`$GLEAN_STORAGE_ROOT/config.toml`** (default **`~/.glean/config.toml`**).
-/// - **With `--workspace`**: writes **`<workspace>/.glean/config.toml`**.
-///
-/// After writing, runs `GleanConfig::load_merged` using the resolved workspace (cwd / `GLEAN_WORKSPACE_ROOT` / `--workspace`) to validate the merge.
-pub fn run_config_init(workspace_flag: Option<PathBuf>, force: bool) -> Result<()> {
-    let merge_workspace = resolve_workspace(workspace_flag.clone())?;
-    let path = if workspace_flag.is_some() {
-        let ws = resolve_workspace(workspace_flag)?;
-        ws.join(".glean").join("config.toml")
-    } else {
-        let layout =
-            glean_core::StorageLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
-        layout.root.join("config.toml")
-    };
+/// Initialize `$GLEAN_STORAGE_ROOT/config.toml` from the built-in template (`--force` overwrites).
+pub fn run_config_init(_workspace_flag: Option<PathBuf>, force: bool) -> Result<()> {
+    let global = glean_core::GlobalLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
+    let path = global.global_config_path();
 
     if path.is_file() && !force {
         bail!(
@@ -165,9 +144,9 @@ pub fn run_config_init(workspace_flag: Option<PathBuf>, force: bool) -> Result<(
     std::fs::write(&path, CONFIG_INIT_TEMPLATE.as_bytes())
         .with_context(|| format!("write {}", path.display()))?;
 
-    glean_core::GleanConfig::load_merged(&merge_workspace).with_context(|| {
+    glean_core::GleanConfig::load_merged_with_global(&global).with_context(|| {
         format!(
-            "written file parses, but merged load failed (check the other config layer): {}",
+            "written file parses, but merged load failed: {}",
             path.display()
         )
     })?;
@@ -176,31 +155,18 @@ pub fn run_config_init(workspace_flag: Option<PathBuf>, force: bool) -> Result<(
     Ok(())
 }
 
-/// Set a single scalar in workspace or global `config.toml` (creates parent dirs if needed).
-///
-/// `KEY` is `section.field` (e.g. `rerank.enabled`). Values: `true`/`false`, integers, or strings (quote for spaces).
-pub fn run_config_set(
-    workspace: Option<PathBuf>,
-    key: String,
-    value: String,
-    global: bool,
-) -> Result<()> {
-    let workspace = resolve_workspace(workspace)?;
+/// Set a single scalar in `$GLEAN_STORAGE_ROOT/config.toml` (creates parent dirs if needed).
+pub fn run_config_set(_workspace: Option<PathBuf>, key: String, value: String) -> Result<()> {
     let (section, field) = parse_key_path(&key)?;
     validate_key(&section, &field)?;
 
-    let path = if global {
-        let layout =
-            glean_core::StorageLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
-        layout.global_config_path()
-    } else {
-        workspace_config_path(&workspace)
-    };
+    let global = glean_core::GlobalLayout::from_env_or_default().map_err(|e| anyhow::anyhow!(e))?;
+    let path = global.global_config_path();
     let mut root = if path.is_file() {
         let s =
             std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         let v: Value = toml::from_str(&s)
-            .with_context(|| format!("parse workspace config {}", path.display()))?;
+            .with_context(|| format!("parse global config {}", path.display()))?;
         match v {
             Value::Table(_) => v,
             _ => bail!("{}: root must be a TOML table", path.display()),
@@ -220,15 +186,15 @@ pub fn run_config_set(
     let parsed = parse_scalar(&value).context("parse value")?;
     section_table.insert(field.clone(), parsed);
 
-    let out = toml::to_string(&root).context("serialize updated workspace config")?;
+    let out = toml::to_string(&root).context("serialize updated global config")?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     std::fs::write(&path, out).with_context(|| format!("write {}", path.display()))?;
 
-    glean_core::GleanConfig::load_merged(&workspace).with_context(|| {
+    glean_core::GleanConfig::load_merged_with_global(&global).with_context(|| {
         format!(
-            "merged config invalid after set (check types and global config.toml): {}",
+            "merged config invalid after set (check types): {}",
             path.display()
         )
     })?;

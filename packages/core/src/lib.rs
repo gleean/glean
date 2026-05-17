@@ -22,7 +22,9 @@ pub use config::{ConfigLayer, GleanConfig};
 pub use embed::{DeterministicEmbedder, Embedder};
 pub use engine::GleanEngine;
 pub use error::{CoreError, StorageError};
-pub use storage::{open_storage, StorageLayout};
+pub use storage::{
+    open_global, open_index_for_workspace, GlobalLayout, StorageLayout, WorkspaceIndexLayout,
+};
 
 /// Public version string surfaced via CLI / MCP `initialize`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

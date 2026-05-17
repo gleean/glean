@@ -11,12 +11,13 @@ use crate::config::GleanConfig;
 use crate::embed::Embedder;
 use crate::error::CoreError;
 use crate::parsers::ParserRegistry;
-use crate::storage::StorageLayout;
+use crate::storage::{GlobalLayout, StorageLayout, WorkspaceIndexLayout};
 use crate::store::{lance_chunks, sqlite};
 
 /// Primary engine handle (opened once per process).
 pub struct GleanEngine {
-    layout: StorageLayout,
+    index_layout: WorkspaceIndexLayout,
+    global_layout: GlobalLayout,
     sqlite: std::sync::Mutex<Connection>,
     lance: Mutex<lancedb::Connection>,
     /// `None`: lazily initialize the default backend on first embed (avoids ONNX fetch during MCP handshake-only runs).
@@ -32,9 +33,13 @@ impl GleanEngine {
     ///
     /// Uses the built-in community [`ParserRegistry`] only. To load `packages/enterprise`, build
     /// the CLI with `--features enterprise` and use [`Self::open_with_registry`].
-    pub async fn open(layout: StorageLayout) -> Result<Arc<Self>, CoreError> {
+    ///
+    /// Tests may use the same directory for index and global layout via [`WorkspaceIndexLayout::from_root`].
+    pub async fn open(index_layout: WorkspaceIndexLayout) -> Result<Arc<Self>, CoreError> {
+        let global_layout = GlobalLayout::from_root(index_layout.root.clone());
         Self::open_inner(
-            layout,
+            index_layout,
+            global_layout,
             None,
             Arc::new(ParserRegistry::with_builtins()),
             None,
@@ -44,11 +49,13 @@ impl GleanEngine {
 
     /// Inject an embedder (integration tests should prefer [`crate::DeterministicEmbedder`]).
     pub async fn open_with_embedder(
-        layout: StorageLayout,
+        index_layout: WorkspaceIndexLayout,
         embedder: Arc<dyn Embedder>,
     ) -> Result<Arc<Self>, CoreError> {
+        let global_layout = GlobalLayout::from_root(index_layout.root.clone());
         Self::open_inner(
-            layout,
+            index_layout,
+            global_layout,
             Some(embedder),
             Arc::new(ParserRegistry::with_builtins()),
             None,
@@ -58,41 +65,70 @@ impl GleanEngine {
 
     /// Open engine with a caller-built parser registry (community + optional enterprise).
     pub async fn open_with_registry(
-        layout: StorageLayout,
+        index_layout: WorkspaceIndexLayout,
         parsers: Arc<ParserRegistry>,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, None, parsers, None).await
+        let global_layout = GlobalLayout::from_root(index_layout.root.clone());
+        Self::open_inner(index_layout, global_layout, None, parsers, None).await
     }
 
-    /// Same as [`Self::open_with_registry`] with an explicit merged [`GleanConfig`].
+    /// Open with explicit index + global layouts and merged [`GleanConfig`].
     pub async fn open_with_registry_and_config(
-        layout: StorageLayout,
+        index_layout: WorkspaceIndexLayout,
+        global_layout: GlobalLayout,
         parsers: Arc<ParserRegistry>,
         runtime_config: GleanConfig,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, None, parsers, Some(runtime_config)).await
+        Self::open_inner(
+            index_layout,
+            global_layout,
+            None,
+            parsers,
+            Some(runtime_config),
+        )
+        .await
+    }
+
+    /// Open index under `<workspace>/.glean/` and use `global_layout` for caches / rerank paths.
+    pub async fn open_for_workspace(
+        workspace_root: &Path,
+        global_layout: GlobalLayout,
+        parsers: Arc<ParserRegistry>,
+        runtime_config: GleanConfig,
+    ) -> Result<Arc<Self>, CoreError> {
+        let index_layout = WorkspaceIndexLayout::for_workspace(workspace_root);
+        index_layout.ensure_directories()?;
+        Self::open_inner(
+            index_layout,
+            global_layout,
+            None,
+            parsers,
+            Some(runtime_config),
+        )
+        .await
     }
 
     /// Open with custom embedder and custom parser registry.
     pub async fn open_with_embedder_and_registry(
-        layout: StorageLayout,
+        index_layout: WorkspaceIndexLayout,
         embedder: Arc<dyn Embedder>,
         parsers: Arc<ParserRegistry>,
     ) -> Result<Arc<Self>, CoreError> {
-        Self::open_inner(layout, Some(embedder), parsers, None).await
+        let global_layout = GlobalLayout::from_root(index_layout.root.clone());
+        Self::open_inner(index_layout, global_layout, Some(embedder), parsers, None).await
     }
 
     async fn open_inner(
-        layout: StorageLayout,
+        index_layout: WorkspaceIndexLayout,
+        global_layout: GlobalLayout,
         embedder: Option<Arc<dyn Embedder>>,
         parsers: Arc<ParserRegistry>,
         runtime_config: Option<GleanConfig>,
     ) -> Result<Arc<Self>, CoreError> {
-        layout.ensure_directories()?;
-        let sqlite_path = layout.metadata_db_path();
+        let sqlite_path = index_layout.metadata_db_path();
         let conn = sqlite::open_conn(&sqlite_path)?;
 
-        let uri = layout.lancedb_uri();
+        let uri = index_layout.lancedb_uri();
         let uri_str = uri.to_string_lossy().to_string();
         let lance = lancedb::connect(&uri_str)
             .execute()
@@ -101,7 +137,8 @@ impl GleanEngine {
         lance_chunks::ensure_document_chunks_table(&lance).await?;
 
         Ok(Arc::new(Self {
-            layout,
+            index_layout,
+            global_layout,
             sqlite: std::sync::Mutex::new(conn),
             lance: Mutex::new(lance),
             embedder_slot: std::sync::Mutex::new(embedder),
@@ -126,8 +163,17 @@ impl GleanEngine {
             .clone())
     }
 
+    /// Per-workspace index paths (`<workspace>/.glean/`).
     pub fn layout(&self) -> &StorageLayout {
-        &self.layout
+        &self.index_layout
+    }
+
+    pub fn index_layout(&self) -> &WorkspaceIndexLayout {
+        &self.index_layout
+    }
+
+    pub fn global_layout(&self) -> &GlobalLayout {
+        &self.global_layout
     }
 
     /// Parser registry used by workspace scans and incremental upserts.
@@ -169,7 +215,7 @@ impl GleanEngine {
         drop(db);
         crate::pipeline::reranker::apply_cross_encoder_rerank(
             &self.runtime_config().rerank,
-            self.layout(),
+            self.global_layout(),
             q,
             hits,
         )

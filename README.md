@@ -71,10 +71,10 @@ This server speaks **newline-delimited JSON-RPC 2.0** with MCP-shaped methods:
 
 Environment:
 
-- **`GLEAN_STORAGE_ROOT`**: SQLite + Lance data (defaults to `~/.glean`).
-- **`GLEAN_WORKSPACE_ROOT`**: workspace boundary for MCP / daemon (optional; defaults to cwd).
+- **`GLEAN_STORAGE_ROOT`**: global home — `config.toml`, `cache/reranker/`, `logs/` (defaults to `~/.glean`).
+- **`GLEAN_WORKSPACE_ROOT`**: workspace root for MCP / daemon (optional; defaults to cwd). Per-project index lives at **`<workspace>/.glean/`** (`metadata/index.db`, `vectors/` only — no config file there).
 - **`GLEAN_LOG`**: optional filter for **`tracing`** on stderr and rolling files (same syntax as `tracing_subscriber::EnvFilter`, e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` use **info** on both stderr and rolling files; **`glean daemon`** uses **info** for rolling files and **warn** on stderr. The `glean` binary does **not** read **`RUST_LOG`**.
-- **Runtime TOML** (optional): merged from `$GLEAN_STORAGE_ROOT/config.toml` then `<workspace>/.glean/config.toml` (workspace root is `GLEAN_WORKSPACE_ROOT` or cwd). **`[indexing].watch_interval`** is in **seconds**; **`0`** means the daemon runs an **initial sync only** (no periodic poll). Internal design notes live under `.docs/02-Developer-Guide/configuration-system.md` when that directory exists locally. **`glean config list`** (alias **`show`**, section provenance by default) prints the merged effective config (stdout); **`glean config init`** writes a template to **`$GLEAN_STORAGE_ROOT/config.toml`** by default (typically **`~/.glean/config.toml`**), or to **`<workspace>/.glean/config.toml`** when **`--workspace`** is set (use **`--force`** to overwrite); **`glean config set SECTION.field value`** patches workspace or **`--global`** config; **`glean models pull rerank`** pre-downloads the BGE rerank cache.
+- **Runtime TOML** (optional): merged from **`$GLEAN_STORAGE_ROOT/config.toml`** only (defaults + global). **`[indexing].watch_interval`** is in **seconds**; **`0`** = daemon **initial sync only**. See `.docs/04-Ops-Security/local-storage-model.md` for multi-workspace index layout. **`glean config list`** / **`init`** / **`set`** operate on global config; **`glean models pull rerank`** pre-downloads the BGE cache under global storage.
 
 Rolling logs also land under **`{GLEAN_STORAGE_ROOT}/logs/`** (`cli.yyyy-mm-dd` / `daemon.yyyy-mm-dd`). Do not print diagnostics to **stdout** while running **`glean mcp`**. For quick inspection from a terminal, run **`glean logs`** (`-n` line count, `--source cli|daemon|all`); it does not install the tracing subscriber.
 
@@ -82,7 +82,7 @@ Rolling logs also land under **`{GLEAN_STORAGE_ROOT}/logs/`** (`cli.yyyy-mm-dd` 
 
 Chunks are embedded with **FastEmbed** using **`AllMiniLM-L6-v2`** (**384-dimensional** `Float32` vectors) and stored in LanceDB `document_chunks` (see `.docs/02-Developer-Guide/lancedb-schema.md`). The ONNX artifacts download on first use under the FastEmbed cache directory.
 
-If you upgrade Glean and see **`LanceDB schema mismatch`**, stop running processes, delete **`$GLEAN_STORAGE_ROOT/vectors`** (or the entire storage root), then run **`glean daemon`** again so the workspace is reindexed.
+If you upgrade Glean and see **`LanceDB schema mismatch`**, stop running processes, delete **`<workspace>/.glean/vectors`** (or the whole `.glean` folder), then run **`glean daemon`** again to reindex that workspace.
 
 ## Verification loop
 

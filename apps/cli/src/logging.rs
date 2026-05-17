@@ -53,7 +53,7 @@ fn filters_for(mode: LogRuntime, toml_level: Option<&str>) -> Result<(EnvFilter,
 /// (daemon stderr stays `warn` unless `GLEAN_LOG` overrides both).
 pub fn init_logging(mode: LogRuntime, toml_level: Option<&str>) -> Result<()> {
     let layout =
-        glean_core::StorageLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
+        glean_core::GlobalLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
     let log_dir = layout.root.join("logs");
     std::fs::create_dir_all(&log_dir).context("create logs directory")?;
 

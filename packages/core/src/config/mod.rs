@@ -1,16 +1,15 @@
-//! Merged runtime configuration from defaults, storage-root `config.toml`,
-//! and workspace `.glean/config.toml` (see internal `configuration-system.md` design).
+//! Merged runtime configuration from defaults and `$GLEAN_STORAGE_ROOT/config.toml`.
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
 use toml::Value;
 
 use crate::error::CoreError;
-use crate::storage::StorageLayout;
+use crate::storage::GlobalLayout;
 
 /// Root config document (TOML sections map to these structs).
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -202,7 +201,6 @@ impl Default for LogConfig {
 pub enum ConfigLayer {
     Default,
     Global,
-    Workspace,
 }
 
 impl ConfigLayer {
@@ -211,42 +209,35 @@ impl ConfigLayer {
         match self {
             Self::Default => "default",
             Self::Global => "global",
-            Self::Workspace => "workspace",
         }
     }
 }
 
 const CONFIG_SECTIONS: &[&str] = &["core", "indexing", "embedding", "rerank", "log"];
 
-fn read_config_root_table(path: &Path) -> Result<Option<Map<String, Value>>, CoreError> {
+fn read_config_root_table(path: &PathBuf) -> Result<Option<Map<String, Value>>, CoreError> {
     if !path.is_file() {
         return Ok(None);
     }
     let text = fs::read_to_string(path).map_err(|e| CoreError::InvalidConfigToml {
-        path: path.to_path_buf(),
+        path: path.clone(),
         message: e.to_string(),
     })?;
     let value: Value = toml::from_str(&text).map_err(|e| CoreError::InvalidConfigToml {
-        path: path.to_path_buf(),
+        path: path.clone(),
         message: e.to_string(),
     })?;
     match value {
         Value::Table(t) => Ok(Some(t)),
         _ => Err(CoreError::InvalidConfigToml {
-            path: path.to_path_buf(),
+            path: path.clone(),
             message: "root must be a TOML table".into(),
         }),
     }
 }
 
-fn section_layer_from_tables(
-    global: Option<&Map<String, Value>>,
-    workspace: Option<&Map<String, Value>>,
-    section: &str,
-) -> ConfigLayer {
-    if workspace.is_some_and(|m| m.contains_key(section)) {
-        ConfigLayer::Workspace
-    } else if global.is_some_and(|m| m.contains_key(section)) {
+fn section_layer_from_global(global: Option<&Map<String, Value>>, section: &str) -> ConfigLayer {
+    if global.is_some_and(|m| m.contains_key(section)) {
         ConfigLayer::Global
     } else {
         ConfigLayer::Default
@@ -256,40 +247,30 @@ fn section_layer_from_tables(
 impl GleanConfig {
     /// Section-level provenance for `glean config list --show-sources`.
     pub fn section_provenance(
-        workspace_root: &Path,
-        layout: &StorageLayout,
+        global: &GlobalLayout,
     ) -> Result<HashMap<String, ConfigLayer>, CoreError> {
-        let global_path = layout.root.join("config.toml");
-        let workspace_path = workspace_root.join(".glean").join("config.toml");
-        let global = read_config_root_table(&global_path)?;
-        let workspace = read_config_root_table(&workspace_path)?;
+        let global_path = global.global_config_path();
+        let global_table = read_config_root_table(&global_path)?;
         let mut out = HashMap::new();
         for &section in CONFIG_SECTIONS {
             out.insert(
                 section.to_string(),
-                section_layer_from_tables(global.as_ref(), workspace.as_ref(), section),
+                section_layer_from_global(global_table.as_ref(), section),
             );
         }
         Ok(out)
     }
 
-    /// Paths checked for provenance and daemon hot-reload (global then workspace).
-    pub fn config_watch_paths(workspace_root: &Path, layout: &StorageLayout) -> (PathBuf, PathBuf) {
-        (
-            layout.root.join("config.toml"),
-            workspace_root.join(".glean").join("config.toml"),
-        )
+    /// Path watched for daemon config hot-reload.
+    pub fn global_config_watch_path(global: &GlobalLayout) -> PathBuf {
+        global.global_config_path()
     }
 
-    /// Merge defaults with `layout.root/config.toml` then `<workspace_root>/.glean/config.toml`.
-    /// Later tables override earlier keys at each section level.
-    pub fn load_merged_with_layout(
-        workspace_root: &Path,
-        layout: &StorageLayout,
-    ) -> Result<Self, CoreError> {
+    /// Merge defaults with `$GLEAN_STORAGE_ROOT/config.toml` (section-level recursive merge).
+    pub fn load_merged_with_global(global: &GlobalLayout) -> Result<Self, CoreError> {
         let mut merged = Map::new();
 
-        let global_path = layout.root.join("config.toml");
+        let global_path = global.global_config_path();
         if global_path.is_file() {
             let text =
                 fs::read_to_string(&global_path).map_err(|e| CoreError::InvalidConfigToml {
@@ -310,43 +291,21 @@ impl GleanConfig {
             }
         }
 
-        let local_path = workspace_root.join(".glean").join("config.toml");
-        if local_path.is_file() {
-            let text =
-                fs::read_to_string(&local_path).map_err(|e| CoreError::InvalidConfigToml {
-                    path: local_path.clone(),
-                    message: e.to_string(),
-                })?;
-            let value: Value = toml::from_str(&text).map_err(|e| CoreError::InvalidConfigToml {
-                path: local_path.clone(),
-                message: e.to_string(),
-            })?;
-            if let Value::Table(t) = value {
-                merge_maps(&mut merged, t);
-            } else {
-                return Err(CoreError::InvalidConfigToml {
-                    path: local_path,
-                    message: "root must be a TOML table".into(),
-                });
-            }
-        }
-
         let wrapped = Value::Table(merged);
         let serialized = toml::to_string(&wrapped)
             .map_err(|e| CoreError::Msg(format!("config serialize: {e}")))?;
         toml::from_str(&serialized).map_err(|e| CoreError::InvalidConfigToml {
-            path: workspace_root.to_path_buf(),
+            path: global_path,
             message: e.to_string(),
         })
     }
 
-    /// Merge defaults with `$GLEAN_STORAGE_ROOT/config.toml` then `<workspace_root>/.glean/config.toml`
-    /// (later files override earlier keys at the TOML table level).
+    /// Merge defaults with `$GLEAN_STORAGE_ROOT/config.toml`.
     ///
     /// Does not read `GLEAN_LOG` here; the CLI applies log filters separately.
-    pub fn load_merged(workspace_root: &Path) -> Result<Self, CoreError> {
-        let layout = StorageLayout::from_env_or_default()?;
-        Self::load_merged_with_layout(workspace_root, &layout)
+    pub fn load_merged() -> Result<Self, CoreError> {
+        let global = GlobalLayout::from_env_or_default()?;
+        Self::load_merged_with_global(&global)
     }
 }
 
@@ -371,47 +330,32 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn merged_workspace_overrides_global_rerank() {
+    fn global_overrides_default_rerank_enabled() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("storage");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
 
         fs::write(
-            storage.join("config.toml"),
+            tmp.path().join("config.toml"),
             r#"
 [rerank]
-enabled = false
+enabled = true
 top_k = 10
 "#,
         )
         .unwrap();
 
-        let ws = tmp.path().join("ws");
-        fs::create_dir_all(ws.join(".glean")).unwrap();
-        fs::write(
-            ws.join(".glean").join("config.toml"),
-            r#"
-[rerank]
-enabled = true
-"#,
-        )
-        .unwrap();
-
-        let cfg = GleanConfig::load_merged_with_layout(&ws, &layout).expect("load merged");
+        let cfg = GleanConfig::load_merged_with_global(&global).expect("load merged");
         assert!(cfg.rerank.enabled);
         assert_eq!(cfg.rerank.top_k, 10);
     }
 
     #[test]
-    fn global_only_applies_when_no_workspace_section() {
+    fn global_log_level_applies() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("glean_home");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
 
         fs::write(
-            storage.join("config.toml"),
+            tmp.path().join("config.toml"),
             r#"
 [log]
 level = "debug"
@@ -419,24 +363,16 @@ level = "debug"
         )
         .unwrap();
 
-        let ws = tmp.path().join("empty_ws");
-        fs::create_dir_all(&ws).unwrap();
-
-        let cfg = GleanConfig::load_merged_with_layout(&ws, &layout).expect("load merged");
+        let cfg = GleanConfig::load_merged_with_global(&global).expect("load merged");
         assert_eq!(cfg.log.level, "debug");
     }
 
     #[test]
     fn no_config_files_yields_defaults() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("store");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
 
-        let ws = tmp.path().join("ws");
-        fs::create_dir_all(&ws).unwrap();
-
-        let cfg = GleanConfig::load_merged_with_layout(&ws, &layout).expect("load merged");
+        let cfg = GleanConfig::load_merged_with_global(&global).expect("load merged");
         assert_eq!(cfg.log.level, default_log_level());
         assert!(cfg.indexing.use_gitignore);
         assert_eq!(cfg.indexing.watch_interval, default_watch_interval());
@@ -444,17 +380,12 @@ level = "debug"
     }
 
     #[test]
-    fn invalid_workspace_config_returns_error() {
+    fn invalid_global_config_returns_error() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("store");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
+        fs::write(tmp.path().join("config.toml"), "not-valid-toml [[[").unwrap();
 
-        let ws = tmp.path().join("bad_ws");
-        fs::create_dir_all(ws.join(".glean")).unwrap();
-        fs::write(ws.join(".glean/config.toml"), "not-valid-toml [[[").unwrap();
-
-        let err = GleanConfig::load_merged_with_layout(&ws, &layout).unwrap_err();
+        let err = GleanConfig::load_merged_with_global(&global).unwrap_err();
         match err {
             CoreError::InvalidConfigToml { path, .. } => {
                 assert!(
@@ -489,14 +420,12 @@ level = "debug"
     }
 
     #[test]
-    fn section_provenance_marks_workspace_rerank() {
+    fn section_provenance_marks_global_rerank() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("s");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
 
         fs::write(
-            storage.join("config.toml"),
+            tmp.path().join("config.toml"),
             r#"
 [rerank]
 enabled = false
@@ -504,31 +433,18 @@ enabled = false
         )
         .unwrap();
 
-        let ws = tmp.path().join("w");
-        fs::create_dir_all(ws.join(".glean")).unwrap();
-        fs::write(
-            ws.join(".glean/config.toml"),
-            r#"
-[rerank]
-enabled = true
-"#,
-        )
-        .unwrap();
-
-        let prov = GleanConfig::section_provenance(&ws, &layout).expect("provenance");
-        assert_eq!(prov.get("rerank").copied(), Some(ConfigLayer::Workspace));
+        let prov = GleanConfig::section_provenance(&global).expect("provenance");
+        assert_eq!(prov.get("rerank").copied(), Some(ConfigLayer::Global));
         assert_eq!(prov.get("core").copied(), Some(ConfigLayer::Default));
     }
 
     #[test]
     fn nested_core_threads_merge_not_replaced_whole_section() {
         let tmp = tempdir().unwrap();
-        let storage = tmp.path().join("s");
-        fs::create_dir_all(&storage).unwrap();
-        let layout = StorageLayout::from_root(&storage);
+        let global = GlobalLayout::from_root(tmp.path());
 
         fs::write(
-            storage.join("config.toml"),
+            tmp.path().join("config.toml"),
             r#"
 [core]
 path = "global_path"
@@ -537,19 +453,8 @@ threads = 4
         )
         .unwrap();
 
-        let ws = tmp.path().join("w");
-        fs::create_dir_all(ws.join(".glean")).unwrap();
-        fs::write(
-            ws.join(".glean/config.toml"),
-            r#"
-[core]
-threads = 1
-"#,
-        )
-        .unwrap();
-
-        let cfg = GleanConfig::load_merged_with_layout(&ws, &layout).expect("load merged");
+        let cfg = GleanConfig::load_merged_with_global(&global).expect("load merged");
         assert_eq!(cfg.core.path, "global_path");
-        assert_eq!(cfg.core.threads, 1);
+        assert_eq!(cfg.core.threads, 4);
     }
 }

@@ -10,11 +10,11 @@ For storage layout, MCP tools, and embedding behavior, see the [repository root 
 
 | Command            | Role                                                                                                                                         |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`glean daemon`** | Watch the workspace (via `glean-core` notify pipeline), debounce, and run incremental sync into LanceDB + SQLite under `GLEAN_STORAGE_ROOT`. |
-| **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Each stdin line must be valid JSON-RPC (plaintext like `initialize` is not accepted). Root `README.md` has **Manual stdin** echo examples. Do not write logs to **stdout** in this mode. |
-| **`glean logs`**   | Print the tail of rolling log files under `{GLEAN_STORAGE_ROOT}/logs/`. Options: `-n` / `--lines`, `--source cli` / `daemon` / `all`.        |
-| **`glean config`** | **`list`** (alias **`show`**): merged effective TOML to stdout. **`init`**: default writes **`$GLEAN_STORAGE_ROOT/config.toml`** (`~/.glean` when unset); with **`--workspace`**, writes **`<workspace>/.glean/config.toml`**. **`set KEY VALUE`**: patch workspace `.glean/config.toml`; **`--global`** writes storage-root `config.toml`. Use **`--force`** on **`init`** to overwrite. |
-| **`glean status`** | Version, storage root, config file presence, and reranker model readiness (stderr via **`tracing`**).                                                                     |
+| **`glean daemon`** | Watch the workspace; sync into **`<workspace>/.glean/`** (SQLite + Lance). Config from **`$GLEAN_STORAGE_ROOT/config.toml`**.                  |
+| **`glean mcp`**    | Short-lived **JSON-RPC 2.0** MCP server on **stdin/stdout**. Do not write logs to **stdout**.                                                   |
+| **`glean logs`**   | Tail rolling logs under **`{GLEAN_STORAGE_ROOT}/logs/`**.                                                                                    |
+| **`glean config`** | **`list`** / **`init`** / **`set`** — global **`$GLEAN_STORAGE_ROOT/config.toml`** only.                                                     |
+| **`glean status`** | Version, global storage, workspace index paths, legacy layout warnings.                                                                      |
 
 Run **`glean --help`** and **`glean <command> --help`** for full Clap help.
 
@@ -22,9 +22,9 @@ Run **`glean --help`** and **`glean <command> --help`** for full Clap help.
 
 | Variable                   | Used by                                 | Meaning                                                                                             |
 | -------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **`GLEAN_STORAGE_ROOT`**   | daemon, MCP, logs                       | Index root (default `~/.glean`).                                                                    |
-| **`GLEAN_WORKSPACE_ROOT`** | daemon (`--workspace` alternative), MCP | Workspace boundary; daemon also accepts **`--workspace`** (defaults to cwd).                        |
-| **`GLEAN_LOG`**            | all                                     | `tracing` `EnvFilter` string (e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` default to **info**; daemon uses **info** for rolling files and **warn** on stderr. `RUST_LOG` is ignored. |
+| **`GLEAN_STORAGE_ROOT`**   | daemon, MCP, logs, config, rerank cache | Global home (default `~/.glean`). **Not** the per-project index.                                    |
+| **`GLEAN_WORKSPACE_ROOT`** | daemon (`--workspace` alternative), MCP | Project root; index at **`<workspace>/.glean/`**.                                                    |
+| **`GLEAN_LOG`**            | all                                     | `tracing` filter; overrides `[log].level` when set.                                                 |
 
 ## Build
 

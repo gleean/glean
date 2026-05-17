@@ -2,4 +2,6 @@
 
 mod layout;
 
-pub use layout::{open_storage, StorageLayout};
+pub use layout::{
+    open_global, open_index_for_workspace, GlobalLayout, StorageLayout, WorkspaceIndexLayout,
+};

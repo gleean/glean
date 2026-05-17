@@ -1,15 +1,22 @@
 //! Subprocess smoke tests for `glean mcp` stdio framing.
 
 use std::io::Write;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
+
+fn mcp_with_temp_env() -> (tempfile::TempDir, tempfile::TempDir) {
+    (
+        tempfile::tempdir().expect("storage"),
+        tempfile::tempdir().expect("workspace"),
+    )
+}
 
 #[test]
 fn glean_mcp_initialize_returns_json_line() {
-    let storage_tmp = tempfile::tempdir().expect("tempdir");
+    let (storage_tmp, ws_tmp) = mcp_with_temp_env();
     let mut child = Command::new(env!("CARGO_BIN_EXE_glean"))
         .args(["mcp"])
         .env("GLEAN_STORAGE_ROOT", storage_tmp.path())
+        .env("GLEAN_WORKSPACE_ROOT", ws_tmp.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -38,10 +45,11 @@ fn glean_mcp_initialize_returns_json_line() {
 
 #[test]
 fn glean_mcp_invalid_json_returns_error_and_exits_cleanly() {
-    let storage_tmp = tempfile::tempdir().expect("tempdir");
+    let (storage_tmp, ws_tmp) = mcp_with_temp_env();
     let mut child = Command::new(env!("CARGO_BIN_EXE_glean"))
         .args(["mcp"])
         .env("GLEAN_STORAGE_ROOT", storage_tmp.path())
+        .env("GLEAN_WORKSPACE_ROOT", ws_tmp.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -66,12 +74,13 @@ fn glean_mcp_invalid_json_returns_error_and_exits_cleanly() {
 }
 
 #[test]
-fn glean_mcp_exits_nonzero_when_workspace_config_toml_invalid() {
-    let storage_tmp = tempfile::tempdir().expect("tempdir");
-    let ws_tmp = tempfile::tempdir().expect("workspace tempdir");
-    let glean_dir: PathBuf = ws_tmp.path().join(".glean");
-    std::fs::create_dir_all(&glean_dir).expect("mkdir .glean");
-    std::fs::write(glean_dir.join("config.toml"), "not-valid-toml [[[\n").expect("write bad toml");
+fn glean_mcp_exits_nonzero_when_global_config_toml_invalid() {
+    let (storage_tmp, ws_tmp) = mcp_with_temp_env();
+    std::fs::write(
+        storage_tmp.path().join("config.toml"),
+        "not-valid-toml [[[\n",
+    )
+    .expect("write bad toml");
 
     let output = Command::new(env!("CARGO_BIN_EXE_glean"))
         .args(["mcp"])
@@ -96,13 +105,10 @@ fn glean_mcp_exits_nonzero_when_workspace_config_toml_invalid() {
 }
 
 #[test]
-fn glean_mcp_initialize_succeeds_with_workspace_local_config() {
-    let storage_tmp = tempfile::tempdir().expect("tempdir");
-    let ws_tmp = tempfile::tempdir().expect("workspace tempdir");
-    let glean_dir: PathBuf = ws_tmp.path().join(".glean");
-    std::fs::create_dir_all(&glean_dir).expect("mkdir .glean");
+fn glean_mcp_initialize_succeeds_with_global_config() {
+    let (storage_tmp, ws_tmp) = mcp_with_temp_env();
     std::fs::write(
-        glean_dir.join("config.toml"),
+        storage_tmp.path().join("config.toml"),
         r#"
 [log]
 level = "debug"

@@ -9,7 +9,7 @@ use tokio::signal;
 use tokio::time::MissedTickBehavior;
 
 use glean_core::pipeline::run_incremental_sync;
-use glean_core::{open_storage, GleanConfig, GleanEngine};
+use glean_core::{open_global, GleanConfig, GleanEngine};
 
 const CONFIG_RELOAD_POLL_SECS: u64 = 2;
 
@@ -31,23 +31,19 @@ async fn shutdown_signal() {
 
 struct ConfigMtimeWatch {
     global: Option<SystemTime>,
-    workspace: Option<SystemTime>,
 }
 
 impl ConfigMtimeWatch {
-    fn new(global_path: &Path, workspace_path: &Path) -> Self {
+    fn new(global_path: &Path) -> Self {
         Self {
             global: file_mtime(global_path),
-            workspace: file_mtime(workspace_path),
         }
     }
 
-    fn changed(&mut self, global_path: &Path, workspace_path: &Path) -> bool {
+    fn changed(&mut self, global_path: &Path) -> bool {
         let g = file_mtime(global_path);
-        let w = file_mtime(workspace_path);
-        let changed = g != self.global || w != self.workspace;
+        let changed = g != self.global;
         self.global = g;
-        self.workspace = w;
         changed
     }
 }
@@ -56,11 +52,8 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
-fn reload_daemon_config(
-    engine: &GleanEngine,
-    workspace: &Path,
-) -> Result<GleanConfig, anyhow::Error> {
-    let cfg = GleanConfig::load_merged_with_layout(workspace, engine.layout())
+fn reload_daemon_config(engine: &GleanEngine) -> Result<GleanConfig, anyhow::Error> {
+    let cfg = GleanConfig::load_merged_with_global(engine.global_layout())
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     engine
         .reload_runtime_config(cfg.clone())
@@ -78,24 +71,28 @@ pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig)
         "starting glean daemon",
     );
 
-    let layout = open_storage().context("open storage root")?;
+    let global = open_global().context("open GLEAN_STORAGE_ROOT")?;
     tracing::info!(
-        storage_root = %layout.root.display(),
-        "opened storage layout",
+        storage_root = %global.root.display(),
+        "opened global storage layout",
     );
 
-    let engine = GleanEngine::open_with_registry_and_config(
-        layout,
+    let engine = GleanEngine::open_for_workspace(
+        &workspace,
+        global,
         crate::parser_bootstrap::build_parser_registry(),
         runtime_config,
     )
     .await
     .context("open glean engine")?;
-    tracing::info!("glean engine opened");
 
-    let (global_cfg_path, workspace_cfg_path) =
-        GleanConfig::config_watch_paths(&workspace, engine.layout());
-    let mut cfg_watch = ConfigMtimeWatch::new(&global_cfg_path, &workspace_cfg_path);
+    tracing::info!(
+        index_root = %engine.index_layout().root.display(),
+        "workspace index layout",
+    );
+
+    let global_cfg_path = GleanConfig::global_config_watch_path(engine.global_layout());
+    let mut cfg_watch = ConfigMtimeWatch::new(&global_cfg_path);
 
     let mut indexing = engine.runtime_config().indexing.clone();
     let (min_bytes, max_bytes) = indexing.sync_byte_limits();
@@ -135,13 +132,13 @@ pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig)
     if poll_duration.is_none() {
         tracing::info!(
             workspace = %workspace.display(),
-            storage_root = %engine.layout().root.display(),
+            index_root = %engine.index_layout().root.display(),
             "watch_interval=0: periodic sync disabled; config hot-reload active",
         );
     } else if let Some(poll) = poll_duration {
         tracing::info!(
             workspace = %workspace.display(),
-            storage_root = %engine.layout().root.display(),
+            index_root = %engine.index_layout().root.display(),
             poll_interval_secs = poll.as_secs(),
             "glean daemon running; periodic sync enabled",
         );
@@ -152,9 +149,9 @@ pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig)
             tokio::select! {
                 _ = shutdown_signal() => break,
                 _ = config_tick.tick() => {
-                    if cfg_watch.changed(&global_cfg_path, &workspace_cfg_path) {
+                    if cfg_watch.changed(&global_cfg_path) {
                         let old_interval = indexing.watch_interval;
-                        let new_cfg = reload_daemon_config(engine.as_ref(), &workspace)?;
+                        let new_cfg = reload_daemon_config(engine.as_ref())?;
                         indexing = new_cfg.indexing.clone();
                         if new_cfg.indexing.watch_interval != old_interval {
                             poll_duration = new_cfg.indexing.watch_poll_interval();
@@ -185,9 +182,9 @@ pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig)
             tokio::select! {
                 _ = shutdown_signal() => break,
                 _ = config_tick.tick() => {
-                    if cfg_watch.changed(&global_cfg_path, &workspace_cfg_path) {
+                    if cfg_watch.changed(&global_cfg_path) {
                         let old_interval = indexing.watch_interval;
-                        let new_cfg = reload_daemon_config(engine.as_ref(), &workspace)?;
+                        let new_cfg = reload_daemon_config(engine.as_ref())?;
                         indexing = new_cfg.indexing.clone();
                         if new_cfg.indexing.watch_interval != old_interval {
                             poll_duration = new_cfg.indexing.watch_poll_interval();

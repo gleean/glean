@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::mcp_protocol::router::{handle_json_line, McpSharedState};
+use crate::mcp_protocol::router::{handle_json_line, HandleOutcome, McpSharedState};
 
 /// Run the MCP stdio server (invoked by `glean mcp`).
 pub async fn run_mcp_server() -> Result<()> {
@@ -14,8 +14,7 @@ pub async fn run_mcp_server() -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().expect("resolve cwd"));
     let workspace_root = workspace_root.canonicalize().unwrap_or(workspace_root);
 
-    let runtime_config =
-        glean_core::GleanConfig::load_merged(&workspace_root).context("load glean config")?;
+    let runtime_config = glean_core::GleanConfig::load_merged().context("load glean config")?;
 
     crate::logging::init_logging(
         crate::logging::LogRuntime::Mcp,
@@ -23,9 +22,10 @@ pub async fn run_mcp_server() -> Result<()> {
     )
     .context("init logging")?;
 
-    let layout = glean_core::open_storage().context("open GLEAN_STORAGE_ROOT")?;
-    let engine = glean_core::GleanEngine::open_with_registry_and_config(
-        layout,
+    let global = glean_core::open_global().context("open GLEAN_STORAGE_ROOT")?;
+    let engine = glean_core::GleanEngine::open_for_workspace(
+        &workspace_root,
+        global,
         crate::parser_bootstrap::build_parser_registry(),
         runtime_config,
     )
@@ -48,16 +48,16 @@ pub async fn run_mcp_server() -> Result<()> {
         if bytes == 0 {
             break;
         }
-
-        match handle_json_line(line.as_str(), &ctx).await {
-            crate::mcp_protocol::router::HandleOutcome::Silent => {}
-            crate::mcp_protocol::router::HandleOutcome::Reply(json) => {
-                stdout
-                    .write_all(json.as_bytes())
-                    .await
-                    .context("write stdout")?;
-                stdout.write_all(b"\n").await.context("write newline")?;
-                stdout.flush().await.context("flush stdout")?;
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+        match handle_json_line(trimmed, &ctx).await {
+            HandleOutcome::Silent => {}
+            HandleOutcome::Reply(response) => {
+                let out = format!("{response}\n");
+                stdout.write_all(out.as_bytes()).await?;
+                stdout.flush().await?;
             }
         }
     }

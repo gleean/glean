@@ -41,7 +41,7 @@ pub fn chunks_schema() -> Arc<Schema> {
 fn schema_mismatch_message() -> String {
     format!(
         "document_chunks table does not match this engine (expect {}-dim `vector`, columns id/file_path/chunk_index(UInt32)/text). \
-         Stop all processes, delete `$GLEAN_STORAGE_ROOT/vectors` (or the entire storage root), then run `glean daemon` or resync to rebuild.",
+         Stop all processes, delete `<workspace>/.glean/vectors` (or the whole `.glean` index dir), then run `glean daemon` or resync to rebuild.",
         EMBEDDING_DIM
     )
 }

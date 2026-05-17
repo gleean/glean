@@ -125,7 +125,7 @@ fn tail_then_follow_until_newer_file(
 /// Entry point for `glean logs`.
 pub fn run_logs(source: LogRuntimeFilter, lines: usize, follow: bool) -> Result<()> {
     let layout =
-        glean_core::StorageLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
+        glean_core::GlobalLayout::from_env_or_default().context("resolve GLEAN_STORAGE_ROOT")?;
     let log_dir = layout.root.join("logs");
     if !log_dir.is_dir() {
         anyhow::bail!(

@@ -6,14 +6,14 @@ use std::time::{Duration, Instant};
 
 use crate::config::RerankConfig;
 use crate::error::CoreError;
-use crate::storage::StorageLayout;
+use crate::storage::GlobalLayout;
 
 const RERANK_TIMEOUT_MS: u64 = 1500;
 /// Drop cached ONNX session after this idle period (see `reranking-strategy.md`).
 const RERANK_SESSION_IDLE_SECS: u64 = 600;
 
 /// Resolve `[rerank].model_path` relative to **`$GLEAN_STORAGE_ROOT`** (absolute paths unchanged).
-pub fn resolve_rerank_model_path(layout: &StorageLayout, cfg: &RerankConfig) -> PathBuf {
+pub fn resolve_rerank_model_path(layout: &GlobalLayout, cfg: &RerankConfig) -> PathBuf {
     let p = Path::new(cfg.model_path.trim());
     if p.is_absolute() {
         p.to_path_buf()
@@ -54,7 +54,7 @@ fn low_power_mode_active() -> bool {
 /// Optionally apply cross-encoder scores to `semantic_search` hits.
 pub fn apply_cross_encoder_rerank(
     cfg: &RerankConfig,
-    layout: &StorageLayout,
+    layout: &GlobalLayout,
     query: &str,
     hits: Vec<(String, String)>,
 ) -> Result<Vec<(String, String)>, CoreError> {
@@ -208,7 +208,7 @@ fn with_reranker<R>(
 
 /// Pre-download BGE reranker assets into `layout.reranker_cache_dir()` (FastEmbed / HF hub).
 #[cfg(feature = "fastembed")]
-pub fn pull_bge_rerank_model(layout: &StorageLayout) -> Result<PathBuf, CoreError> {
+pub fn pull_bge_rerank_model(layout: &GlobalLayout) -> Result<PathBuf, CoreError> {
     let cache_dir = layout.reranker_cache_dir();
     std::fs::create_dir_all(&cache_dir)
         .map_err(|e| CoreError::Msg(format!("mkdir rerank cache: {e}")))?;
@@ -218,7 +218,7 @@ pub fn pull_bge_rerank_model(layout: &StorageLayout) -> Result<PathBuf, CoreErro
 }
 
 #[cfg(not(feature = "fastembed"))]
-pub fn pull_bge_rerank_model(_layout: &StorageLayout) -> Result<PathBuf, CoreError> {
+pub fn pull_bge_rerank_model(_layout: &GlobalLayout) -> Result<PathBuf, CoreError> {
     Err(CoreError::Msg(
         "rerank model pull requires glean-core built with feature `fastembed`".into(),
     ))
@@ -306,7 +306,7 @@ fn execution_providers_for_rerank() -> Vec<ort::execution_providers::ExecutionPr
 mod tests {
     use super::*;
     use crate::config::RerankConfig;
-    use crate::storage::StorageLayout;
+    use crate::storage::GlobalLayout;
 
     fn sample_hits() -> Vec<(String, String)> {
         vec![("a".into(), "t1".into()), ("b".into(), "t2".into())]
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn resolve_model_path_relative_to_storage_root() {
-        let layout = StorageLayout::from_root("/tmp/glean");
+        let layout = GlobalLayout::from_root("/tmp/glean");
         let cfg = RerankConfig::default();
         let p = resolve_rerank_model_path(&layout, &cfg);
         assert_eq!(
@@ -324,8 +324,19 @@ mod tests {
     }
 
     #[test]
+    fn resolve_model_path_absolute_unchanged() {
+        let layout = GlobalLayout::from_root("/tmp/glean");
+        let cfg = RerankConfig {
+            model_path: "/opt/models/r.onnx".into(),
+            ..Default::default()
+        };
+        let p = resolve_rerank_model_path(&layout, &cfg);
+        assert_eq!(p, PathBuf::from("/opt/models/r.onnx"));
+    }
+
+    #[test]
     fn when_disabled_returns_hits_untouched() {
-        let layout = StorageLayout::from_root("/tmp");
+        let layout = GlobalLayout::from_root("/tmp");
         let cfg = RerankConfig {
             enabled: false,
             ..Default::default()
@@ -338,7 +349,7 @@ mod tests {
     #[test]
     fn when_enabled_missing_model_returns_baseline() {
         let tmp = tempfile::tempdir().unwrap();
-        let layout = StorageLayout::from_root(tmp.path());
+        let layout = GlobalLayout::from_root(tmp.path());
         let cfg = RerankConfig {
             enabled: true,
             ..Default::default()
