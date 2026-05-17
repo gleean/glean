@@ -53,9 +53,7 @@ impl ConfigMtimeWatch {
 }
 
 fn file_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 fn reload_daemon_config(
@@ -130,9 +128,8 @@ pub async fn run_daemon(workspace: Option<PathBuf>, runtime_config: GleanConfig)
         glean_core::watcher::install_recursive_workspace_watch(&workspace, Arc::clone(&dirt))
             .context("notify watcher")?;
 
-    let mut config_tick = tokio::time::interval(std::time::Duration::from_secs(
-        CONFIG_RELOAD_POLL_SECS,
-    ));
+    let mut config_tick =
+        tokio::time::interval(std::time::Duration::from_secs(CONFIG_RELOAD_POLL_SECS));
     config_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     if poll_duration.is_none() {

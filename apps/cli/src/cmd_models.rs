@@ -6,8 +6,7 @@ use anyhow::{bail, Context, Result};
 pub fn run_models_pull(model: &str) -> Result<()> {
     match model {
         "rerank" => {
-            let layout =
-                glean_core::open_storage().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let layout = glean_core::open_storage().map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let cache = glean_core::pipeline::reranker::pull_bge_rerank_model(&layout)
                 .context("pull BGE rerank model")?;
             eprintln!(

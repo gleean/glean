@@ -274,10 +274,7 @@ impl GleanConfig {
     }
 
     /// Paths checked for provenance and daemon hot-reload (global then workspace).
-    pub fn config_watch_paths(
-        workspace_root: &Path,
-        layout: &StorageLayout,
-    ) -> (PathBuf, PathBuf) {
+    pub fn config_watch_paths(workspace_root: &Path, layout: &StorageLayout) -> (PathBuf, PathBuf) {
         (
             layout.root.join("config.toml"),
             workspace_root.join(".glean").join("config.toml"),
