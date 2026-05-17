@@ -290,13 +290,14 @@ fn try_load_user_onnx(
 
 #[cfg(feature = "fastembed")]
 fn execution_providers_for_rerank() -> Vec<ort::execution_providers::ExecutionProviderDispatch> {
-    use ort::ep::{CoreML, CPU};
     #[cfg(target_os = "macos")]
     {
+        use ort::ep::{CoreML, CPU};
         vec![CoreML::default().build(), CPU::default().build()]
     }
     #[cfg(not(target_os = "macos"))]
     {
+        use ort::ep::CPU;
         vec![CPU::default().build()]
     }
 }
