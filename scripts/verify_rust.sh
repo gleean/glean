@@ -6,6 +6,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# glean-desktop: Tauri externalBin expects target/release/glean-<rustc-host>; see prepare_sidecar_bin.sh
+cargo build -p glean-cli --release
+bash scripts/prepare_sidecar_bin.sh
+
 cargo fmt --all
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings

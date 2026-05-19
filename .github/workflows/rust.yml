@@ -37,6 +37,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Tauri externalBin resolves ../../../target/release/glean-<rustc-host-triple>; see scripts/prepare_sidecar_bin.sh
+      - name: Build sidecar binary for glean-desktop (Tauri externalBin)
+        run: |
+          cargo build -p glean-cli --release
+          bash scripts/prepare_sidecar_bin.sh
+
       - name: Lint & test (mirrors scripts/verify_rust.sh)
         run: |
           cargo fmt --all -- --check
