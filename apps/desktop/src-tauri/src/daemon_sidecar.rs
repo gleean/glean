@@ -34,10 +34,7 @@ impl DaemonSidecar {
             .arg("daemon")
             .arg("--workspace")
             .arg(workspace)
-            .env(
-                "GLEAN_WORKSPACE_ROOT",
-                workspace.to_string_lossy().as_ref(),
-            )
+            .env("GLEAN_WORKSPACE_ROOT", workspace.to_string_lossy().as_ref())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

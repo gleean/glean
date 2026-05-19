@@ -41,23 +41,16 @@ impl AppInner {
         }
         self.engine = None;
 
-        std::env::set_var(
-            "GLEAN_WORKSPACE_ROOT",
-            workspace.to_string_lossy().as_ref(),
-        );
+        std::env::set_var("GLEAN_WORKSPACE_ROOT", workspace.to_string_lossy().as_ref());
 
         let sidecar = DaemonSidecar::spawn(&workspace)?;
         self.sidecar = Some(sidecar);
 
         let cfg = GleanConfig::load_merged()?;
         let global = open_global()?;
-        let engine = GleanEngine::open_for_workspace(
-            &workspace,
-            global,
-            build_default_registry(),
-            cfg,
-        )
-        .await?;
+        let engine =
+            GleanEngine::open_for_workspace(&workspace, global, build_default_registry(), cfg)
+                .await?;
 
         self.workspace = Some(workspace);
         self.engine = Some(engine);

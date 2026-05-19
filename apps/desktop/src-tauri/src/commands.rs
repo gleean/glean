@@ -23,12 +23,17 @@ pub async fn pick_workspace(
     };
     let workspace = PathBuf::from(path);
     let mut guard = state.lock().await;
-    guard.set_workspace(workspace.clone()).await.map_err(|e| e.to_string())?;
+    guard
+        .set_workspace(workspace.clone())
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(workspace.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-pub async fn get_status(state: State<'_, AppState>) -> Result<glean_host::status::StatusReport, String> {
+pub async fn get_status(
+    state: State<'_, AppState>,
+) -> Result<glean_host::status::StatusReport, String> {
     let guard = state.lock().await;
     let workspace = guard.workspace().map_err(|e: StateError| e.to_string())?;
     glean_host::status::collect_status_for_workspace(workspace).map_err(|e| e.to_string())

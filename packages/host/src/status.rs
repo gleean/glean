@@ -2,11 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
 use glean_core::{
     pipeline::reranker::{onnx_model_exists, resolve_rerank_model_path},
     GleanConfig, GlobalLayout, WorkspaceIndexLayout,
 };
+use serde::Serialize;
 
 use crate::{workspace::resolve_workspace_from_env, HostError};
 
