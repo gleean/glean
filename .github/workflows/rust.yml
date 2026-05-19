@@ -19,8 +19,17 @@ jobs:
           submodules: recursive
           token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
 
-      - name: Install protobuf compiler (Lance / prost codegen)
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install system packages (Lance protoc + Tauri Linux deps)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            protobuf-compiler \
+            build-essential \
+            curl \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
