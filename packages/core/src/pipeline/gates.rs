@@ -5,6 +5,7 @@ use std::path::Path;
 /// Skip known noisy or huge directory segments (exact name match on a normal path component).
 const SKIPPED_DIR_NAMES: &[&str] = &[
     ".git",
+    ".idea",
     ".svn",
     ".hg",
     "node_modules",

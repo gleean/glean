@@ -1,14 +1,19 @@
+<p align="center">
+  <img src="apps/desktop/public/glean.svg" alt="Glean logo" width="128" height="128" />
+</p>
+
 # Glean
 
 Glean is a **local-first knowledge engine** with a Rust core. This repository is still early-stage; the current milestone focuses on a working Cargo workspace and an MCP-compatible **stdio** server (`glean mcp`).
 
 ## Workspace layout
 
-| Crate | Role |
-|-------|------|
-| [`packages/core`](packages/core) | Indexing engine: LanceDB, SQLite shadow, `GleanEngine`, pipeline |
-| [`packages/host`](packages/host) | Host runtime: daemon loop, MCP router, config editor, status |
-| [`apps/cli`](apps/cli) | Single `glean` binary: Clap, stdio MCP transport, logging subscriber |
+| Crate                            | Role                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`packages/core`](packages/core) | Indexing engine: LanceDB, SQLite shadow, `GleanEngine`, pipeline                                     |
+| [`packages/host`](packages/host) | Host runtime: daemon loop, MCP router, config editor, status                                         |
+| [`apps/cli`](apps/cli)           | Single `glean` binary: Clap, stdio MCP transport, logging subscriber                                 |
+| [`apps/desktop`](apps/desktop)   | Tauri 2 + Next.js desktop UI; read-only search via `glean-host`, indexing via sidecar `glean daemon` |
 
 ## Building
 
@@ -19,6 +24,18 @@ cargo build -p glean-cli --release
 ```
 
 The binary is emitted as `target/release/glean`.
+
+### Desktop app (Tauri + Next.js)
+
+See [`apps/desktop/README.md`](apps/desktop/README.md). **Releases**: push a `v*` tag (e.g. `v0.1.0`) to build macOS (Apple Silicon / Intel) and Windows installers — [release notes (local)](.docs/04-Ops-Security/desktop-release.md).
+
+Quick start:
+
+```bash
+cargo build -p glean-cli          # sidecar binary at target/debug/glean
+pnpm install
+pnpm --filter @glean/desktop tauri dev
+```
 
 ## MCP (stdio)
 

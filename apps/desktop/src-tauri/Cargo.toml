@@ -1,0 +1,26 @@
+[package]
+name = "glean-desktop"
+version = "0.1.0"
+description = "Glean desktop shell (Tauri + glean-core/host)"
+authors = ["Glean Contributors"]
+license = "Apache-2.0"
+edition = "2021"
+rust-version = "1.91"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+glean-core = { path = "../../../packages/core" }
+glean-host = { path = "../../../packages/host" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tracing = "0.1"
