@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/gleean/glean/compare/v0.1.3...v0.2.0) (2026-05-20)
+
+
+### Features
+
+* **desktop:** recent changes, file preview, indexing settings ([c1cb7b4](https://github.com/gleean/glean/commit/c1cb7b4530c0dccbbfed9ae9af91be954afadba9))
+* **desktop:** settings page and prefs.rs scaffolding, add Tauri settings commands, refresh workspace on pick, error handling improvements ([176dc1d](https://github.com/gleean/glean/commit/176dc1d5f2ca25ef208a3112c12f2505cf797310))
+
 ## [0.1.3](https://github.com/gleean/glean/compare/v0.1.2...v0.1.3) (2026-05-20)
 
 
