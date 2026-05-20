@@ -122,12 +122,13 @@ chmod +x scripts/verify_rust.sh
 
 This repo may ignore `.cursor/` for open-source hygiene. If you want automatic verification after an Agent completes a turn, configure a **user-level** Cursor hook (for example on `stop`) to run `scripts/verify_rust.sh`.
 
-Treat **GitHub Actions** (`rust.yml`) as the shared CI gate for contributors (`fmt`, `clippy`, `tests`).
+Treat [`.github/workflows/rust.yml`](.github/workflows/rust.yml) as the shared **PR / `main` CI gate** (`fmt`, `clippy`, `tests`). It is separate from desktop release workflows (`release-please.yml` bumps versions; `release-desktop.yml` builds installers on `v*` tags only).
 
 ## Contributors
 
 - Optional **Cursor Hooks** (e.g. on `stop`) pointing at `scripts/verify_rust.sh` are a **local productivity aid**. They are not required for correctness.
-- **GitHub Actions** runs `cargo fmt`, `cargo clippy -D warnings`, and `cargo test --workspace` (same intent as `scripts/verify_rust.sh`).
+- **`rust.yml`** (every PR and push to `main`): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` — same intent as `scripts/verify_rust.sh`.
+- **Desktop release** workflows do not replace `rust.yml`; they do not run the full workspace test suite on each PR.
 
 ## License
 
