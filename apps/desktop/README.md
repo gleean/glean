@@ -64,15 +64,18 @@ pnpm --filter @glean/desktop tauri build
 
 The sidecar script copies `target/*/release/glean` to `target/release/glean-<triple>` for Tauri `externalBin` bundling.
 
-## GitHub Release
+## GitHub Release (release-please)
 
-Tagged pushes (`v*`) build **unsigned** installers for macOS (Apple Silicon + Intel) and Windows x64 via [`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml).
+Desktop versions are managed by **[release-please](https://github.com/googleapis/release-please)** on push to `main`:
 
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+1. Merge feature PRs with **Conventional Commits** (`feat:`, `fix:`, `feat!:` for breaking).
+2. Release-please opens a **Release PR** (bumps `package.json`, `tauri.conf.json`, `Cargo.toml`, `CHANGELOG.md`).
+3. **Merge the Release PR** → tag `vX.Y.Z` + GitHub Release notes.
+4. [`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml) builds **unsigned** macOS (Apple Silicon + Intel) and Windows x64 installers onto that Release.
 
-See [`.docs/04-Ops-Security/desktop-release.md`](../../.docs/04-Ops-Security/desktop-release.md) for artifact matrix and Gatekeeper / SmartScreen notes.
+Config: [`release-please-config.json`](../../release-please-config.json), [`.release-please-manifest.json`](../../.release-please-manifest.json).
+
+Do **not** hand-tag for routine releases. See [`.docs/04-Ops-Security/desktop-release.md`](../../.docs/04-Ops-Security/desktop-release.md) for the full pipeline, commit rules, and Gatekeeper / SmartScreen notes.
 
 ## Frontend API
 

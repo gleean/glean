@@ -1,0 +1,22 @@
+{
+	"$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+	"packages": {
+		"apps/desktop": {
+			"release-type": "node",
+			"component": "desktop",
+			"include-component-in-tag": false,
+			"changelog-path": "apps/desktop/CHANGELOG.md",
+			"extra-files": [
+				{
+					"type": "generic",
+					"path": "apps/desktop/src-tauri/tauri.conf.json",
+					"jsonpath": "$.version"
+				},
+				{
+					"type": "cargo",
+					"path": "apps/desktop/src-tauri/Cargo.toml"
+				}
+			]
+		}
+	}
+}

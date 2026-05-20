@@ -29,7 +29,7 @@ The binary is emitted as `target/release/glean`.
 
 ### Desktop app (Tauri + Next.js)
 
-See [`apps/desktop/README.md`](apps/desktop/README.md). **Releases**: push a `v*` tag (e.g. `v0.1.0`) to build macOS (Apple Silicon / Intel) and Windows installers — [release notes (local)](.docs/04-Ops-Security/desktop-release.md).
+See [`apps/desktop/README.md`](apps/desktop/README.md). **Releases**: [release-please](https://github.com/googleapis/release-please) on `main` opens a Release PR; merging it tags `v*` and builds macOS (Apple Silicon / Intel) and Windows installers — [ops notes (local)](.docs/04-Ops-Security/desktop-release.md).
 
 Quick start:
 

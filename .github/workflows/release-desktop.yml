@@ -88,6 +88,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
+          retryAttempts: 5
           releaseName: Glean Desktop v__VERSION__
           releaseBody: |
             Unsigned desktop builds for **${{ matrix.name }}**.
@@ -102,6 +103,8 @@ jobs:
             Windows: SmartScreen may warn on first run; choose **More info → Run anyway** if you trust this release.
 
             Indexing runs via bundled `glean daemon` sidecar (single writer).
+
+            Changelog: [apps/desktop/CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/apps/desktop/CHANGELOG.md)
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
