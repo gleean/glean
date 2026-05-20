@@ -8,8 +8,9 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      # Monorepo path `apps/desktop` — not root `release_created` / `tag_name` (see release-please-action README).
+      release_created: ${{ steps.release.outputs['apps/desktop--release_created'] }}
+      tag_name: ${{ steps.release.outputs['apps/desktop--tag_name'] }}
     permissions:
       contents: write
       pull-requests: write
