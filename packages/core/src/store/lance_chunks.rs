@@ -75,6 +75,7 @@ pub fn chunk_row_id(file_path: &str, chunk_index: u32) -> String {
     digest_to_hex_lower(hasher.finalize())
 }
 
+/// Convert a batch of vectors to an Arrow array.
 fn embedding_batch_from_vectors(rows: &[Vec<f32>]) -> Result<ArrayRef, CoreError> {
     let dim = EMBEDDING_DIM as usize;
     let mut flat = Vec::with_capacity(rows.len() * dim);
