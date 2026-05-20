@@ -118,9 +118,7 @@ pub async fn recent_changes(
     let workspace = guard.workspace().map_err(|e: StateError| e.to_string())?;
     let engine = guard.engine().map_err(|e: StateError| e.to_string())?;
     let limit = limit.unwrap_or(50) as usize;
-    let rows = engine
-        .recent_changes(limit)
-        .map_err(|e| e.to_string())?;
+    let rows = engine.recent_changes(limit).map_err(|e| e.to_string())?;
     Ok(rows
         .into_iter()
         .map(|(path_key, mtime_ns)| RecentChangeDto {
@@ -160,8 +158,8 @@ pub async fn init_global_config(
     state: State<'_, AppState>,
     force: Option<bool>,
 ) -> Result<String, String> {
-    let path =
-        glean_host::config::init_global_config(force.unwrap_or(false)).map_err(|e| e.to_string())?;
+    let path = glean_host::config::init_global_config(force.unwrap_or(false))
+        .map_err(|e| e.to_string())?;
     let mut guard = state.lock().await;
     guard
         .reload_daemon_and_config()
