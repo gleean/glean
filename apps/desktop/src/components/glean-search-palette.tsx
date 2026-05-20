@@ -8,7 +8,7 @@ import {
 import { CornerDownLeft, FileText, Loader2, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useGleanApp } from "@/contexts/glean-app-context";
-import { semanticSearch } from "@/lib/tauri";
+import { revealPathInFileManager, semanticSearch } from "@/lib/tauri";
 import type { SearchHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ export function GleanSearchPalette({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
-	const { workspace } = useGleanApp();
+	const { workspace, reportError } = useGleanApp();
 	const [query, setQuery] = useState("");
 	const [hits, setHits] = useState<SearchHit[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -77,13 +77,15 @@ export function GleanSearchPalette({
 				setActive((i) => Math.max(0, i - 1));
 			} else if (e.key === "Enter" && hits[active]) {
 				e.preventDefault();
-				// would call reveal_in_finder(hits[active].path) in tauri
+				void revealPathInFileManager(hits[active].path).catch((err) =>
+					reportError(err instanceof Error ? err.message : String(err)),
+				);
 				onOpenChange(false);
 			}
 		}
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [open, hits, active, onOpenChange]);
+	}, [open, hits, active, onOpenChange, reportError]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>

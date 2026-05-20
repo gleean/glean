@@ -4,10 +4,15 @@ import { Badge } from "@glean/ui/components/ui/badge";
 import { Button } from "@glean/ui/components/ui/button";
 import { Input } from "@glean/ui/components/ui/input";
 import { Switch } from "@glean/ui/components/ui/switch";
-import { FolderOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import { FolderOpen, Loader2 } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { GleanPathRow } from "@/components/glean-path-row";
 import { useGleanApp } from "@/contexts/glean-app-context";
+import {
+	getGlobalConfigToml,
+	revealPathInFileManager,
+	setGlobalConfigKey,
+} from "@/lib/tauri";
 
 function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
 	return (
@@ -80,7 +85,88 @@ function Group({
 }
 
 export default function SettingsPage() {
-	const { status } = useGleanApp();
+	const { status, refresh, reportError, clearError } = useGleanApp();
+	const [saving, setSaving] = useState(false);
+	const [rerankEnabled, setRerankEnabled] = useState(true);
+	const [logLevel, setLogLevel] = useState("info");
+	const [watchInterval, setWatchInterval] = useState("10");
+
+	const loadConfigFields = useCallback(async () => {
+		try {
+			const toml = await getGlobalConfigToml();
+			const rerankMatch = toml.match(/\[rerank\][\s\S]*?enabled\s*=\s*(\w+)/);
+			if (rerankMatch) {
+				setRerankEnabled(rerankMatch[1].toLowerCase() === "true");
+			}
+			const logMatch = toml.match(/\[log\][\s\S]*?level\s*=\s*"?([^"\n]+)"?/);
+			if (logMatch) setLogLevel(logMatch[1].trim());
+			const watchMatch = toml.match(
+				/\[indexing\][\s\S]*?watch_interval\s*=\s*(\d+)/,
+			);
+			if (watchMatch) setWatchInterval(watchMatch[1]);
+		} catch (e) {
+			reportError(e instanceof Error ? e.message : String(e));
+		}
+	}, [reportError]);
+
+	useEffect(() => {
+		void loadConfigFields();
+	}, [loadConfigFields]);
+
+	const applyKey = async (key: string, value: string) => {
+		setSaving(true);
+		clearError();
+		try {
+			await setGlobalConfigKey(key, value);
+			await refresh();
+			await loadConfigFields();
+		} catch (e) {
+			reportError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const onRerankChange = async (checked: boolean) => {
+		setRerankEnabled(checked);
+		await applyKey("rerank.enabled", checked ? "true" : "false");
+	};
+
+	const onLogLevelBlur = async () => {
+		const level = logLevel.trim().toLowerCase();
+		if (!level) return;
+		await applyKey("log.level", level);
+	};
+
+	const onWatchIntervalBlur = async () => {
+		const n = Number.parseInt(watchInterval, 10);
+		if (Number.isNaN(n) || n < 0) {
+			reportError("watch_interval must be a non-negative integer (seconds)");
+			return;
+		}
+		await applyKey("indexing.watch_interval", String(n));
+	};
+
+	const openConfigFolder = async () => {
+		const path = status?.global_config_path;
+		if (!path) return;
+		const dir = path.replace(/[/\\][^/\\]+$/, "");
+		try {
+			await revealPathInFileManager(dir);
+		} catch (e) {
+			reportError(e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const revealIndex = async () => {
+		const path = status?.index_root;
+		if (!path) return;
+		try {
+			await revealPathInFileManager(path);
+		} catch (e) {
+			reportError(e instanceof Error ? e.message : String(e));
+		}
+	};
 
 	return (
 		<div className="flex flex-col">
@@ -119,28 +205,28 @@ export default function SettingsPage() {
 							<div className="text-[12px] font-medium text-muted-foreground">
 								Log level
 							</div>
-							<code className="rounded bg-muted px-2 py-1 font-mono text-[11px]">
-								{status?.log_level ?? "—"}
-							</code>
+							<Input
+								value={logLevel}
+								onChange={(e) => setLogLevel(e.target.value)}
+								onBlur={() => void onLogLevelBlur()}
+								disabled={saving}
+								className="h-8 font-mono text-[11px]"
+								placeholder="info"
+							/>
 						</div>
 					</div>
 				</Group>
 
-				<Group
-					title="Watch & index"
-					badge={
-						<Badge variant="secondary" className="text-[10px]">
-							Coming soon
-						</Badge>
-					}
-				>
+				<Group title="Watch & index">
 					<Row
 						label="Watch debounce"
-						description="Delay before reindexing after a file change."
+						description="Seconds between daemon polls after a file change (0 = initial sync only)."
 						control={
 							<Input
-								disabled
-								placeholder="500 ms"
+								value={watchInterval}
+								onChange={(e) => setWatchInterval(e.target.value)}
+								onBlur={() => void onWatchIntervalBlur()}
+								disabled={saving}
 								className="h-8 w-28 text-[12px]"
 							/>
 						}
@@ -151,8 +237,8 @@ export default function SettingsPage() {
 						control={<Switch disabled />}
 					/>
 					<Row
-						label="Skip files larger than 1 MB"
-						description="Avoid indexing large binaries and minified bundles."
+						label="Skip files larger than max_file_size"
+						description="Configured in config.toml; daemon applies on reload."
 						control={<Switch disabled defaultChecked />}
 					/>
 				</Group>
@@ -160,11 +246,12 @@ export default function SettingsPage() {
 				<Group title="Reranker">
 					<Row
 						label="Use reranker"
-						description="On-device rerank of the top vector candidates. Adds 10–20ms."
+						description="On-device rerank of the top vector candidates."
 						control={
 							<Switch
-								defaultChecked={status?.rerank_enabled ?? true}
-								disabled
+								checked={rerankEnabled}
+								onCheckedChange={(v) => void onRerankChange(v)}
+								disabled={saving}
 							/>
 						}
 					/>
@@ -172,21 +259,36 @@ export default function SettingsPage() {
 
 				<Group title="Actions">
 					<div className="flex flex-wrap gap-2 p-3">
-						<Button variant="outline" size="sm" disabled className="gap-2">
-							<FolderOpen className="h-3.5 w-3.5" />
+						<Button
+							variant="outline"
+							size="sm"
+							className="gap-2"
+							disabled={!status?.global_config_path || saving}
+							onClick={() => void openConfigFolder()}
+						>
+							{saving ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<FolderOpen className="h-3.5 w-3.5" />
+							)}
 							Open config folder
-							<Badge variant="secondary" className="ml-1 text-[10px]">
-								Soon
-							</Badge>
 						</Button>
-						<Button variant="outline" size="sm" disabled className="gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							className="gap-2"
+							disabled={!status?.index_root || saving}
+							onClick={() => void revealIndex()}
+						>
 							<FolderOpen className="h-3.5 w-3.5" />
 							Reveal index
-							<Badge variant="secondary" className="ml-1 text-[10px]">
-								Soon
-							</Badge>
 						</Button>
 					</div>
+					{saving ? (
+						<p className="border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
+							Saving config and restarting daemon…
+						</p>
+					) : null}
 				</Group>
 			</div>
 		</div>

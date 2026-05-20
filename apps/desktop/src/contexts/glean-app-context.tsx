@@ -17,6 +17,7 @@ import {
 	isTauri,
 	openDirectoryDialog,
 	pickWorkspace,
+	tryRestoreWorkspace,
 } from "@/lib/tauri";
 import type { StatusReport } from "@/lib/types";
 
@@ -97,7 +98,16 @@ export function GleanAppProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		queueMicrotask(() => {
-			void refresh();
+			void (async () => {
+				if (isTauri()) {
+					try {
+						await tryRestoreWorkspace();
+					} catch (e) {
+						setError(e instanceof Error ? e.message : String(e));
+					}
+				}
+				await refresh();
+			})();
 		});
 	}, [refresh]);
 

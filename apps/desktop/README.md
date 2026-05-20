@@ -123,4 +123,5 @@ cd packages/ui && pnpm dlx shadcn@latest add <component>
 
 - **Single writer**: only the sidecar runs `glean daemon`.
 - MCP for Cursor remains **`glean mcp`** from the CLI.
-- Workspace is **session-only** (not persisted across app restarts yet).
+- Last workspace is persisted under the Tauri app data dir and restored on launch (`try_restore_workspace`).
+- Use **Conventional Commits** on feature PRs (e.g. `feat(desktop): …`) so release-please can version the desktop package.

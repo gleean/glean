@@ -4,7 +4,7 @@ import { ArrowRight, FileText, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GleanNoWorkspace } from "@/components/glean-no-workspace";
 import { useGleanApp } from "@/contexts/glean-app-context";
-import { semanticSearch } from "@/lib/tauri";
+import { revealPathInFileManager, semanticSearch } from "@/lib/tauri";
 import type { SearchHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -203,9 +203,13 @@ export default function HomePage() {
 								</div>
 								<button
 									type="button"
-									disabled
-									title="Coming soon"
-									className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 py-1 text-[11.5px] text-muted-foreground opacity-60"
+									title="Reveal in file manager"
+									className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 py-1 text-[11.5px] text-muted-foreground hover:bg-muted/60"
+									onClick={() => {
+										void revealPathInFileManager(active.path).catch((e) =>
+											reportError(e instanceof Error ? e.message : String(e)),
+										);
+									}}
 								>
 									Reveal in Finder
 									<ArrowRight className="h-3 w-3" />

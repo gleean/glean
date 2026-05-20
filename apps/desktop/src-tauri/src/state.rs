@@ -71,4 +71,21 @@ impl AppInner {
             .map(|s| s.is_running())
             .unwrap_or(false)
     }
+
+    /// Restart sidecar and reload merged config into the open engine (after global config edits).
+    pub async fn reload_daemon_and_config(&mut self) -> Result<(), StateError> {
+        let Some(workspace) = self.workspace.clone() else {
+            return Ok(());
+        };
+        if let Some(mut old) = self.sidecar.take() {
+            old.stop();
+        }
+        let sidecar = DaemonSidecar::spawn(&workspace)?;
+        self.sidecar = Some(sidecar);
+        if let Some(engine) = self.engine.as_ref() {
+            let cfg = GleanConfig::load_merged()?;
+            engine.reload_runtime_config(cfg)?;
+        }
+        Ok(())
+    }
 }
