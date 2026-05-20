@@ -7,17 +7,29 @@ on:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    # Repo Settings → Actions → General: enable BOTH read/write workflow permissions
-    # AND "Allow GitHub Actions to create and approve pull requests" (off by default for
-    # new personal repos). YAML permissions alone do not enable PR creation; see:
-    # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
+          # Optional secret RELEASE_PLEASE_TOKEN (PAT): tag push may trigger on: push:tags as backup.
+          # Primary desktop build uses build-desktop workflow_call below (GITHUB_TOKEN tags do not).
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  build-desktop:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-desktop-reusable.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

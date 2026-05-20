@@ -1,0 +1,135 @@
+# Reusable desktop + CLI release build. Called from release-please (primary) or release-desktop.yml.
+name: Release Desktop (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Git tag to build (e.g. v0.1.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos-aarch64
+            platform: macos-14
+            target: aarch64-apple-darwin
+            name: macOS Apple Silicon
+            cli_asset: glean-aarch64-apple-darwin
+          - id: macos-x86_64
+            platform: macos-13
+            target: x86_64-apple-darwin
+            name: macOS Intel
+            cli_asset: glean-x86_64-apple-darwin
+          - id: windows-x64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows x64
+            cli_asset: glean-x86_64-pc-windows-msvc.exe
+
+    runs-on: ${{ matrix.platform }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          submodules: recursive
+          token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-desktop
+          workspaces: |
+            apps/cli
+            apps/desktop/src-tauri
+            packages/core
+            packages/host
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build glean CLI (sidecar + standalone release asset)
+        run: cargo build -p glean-cli --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET: ${{ matrix.target }}
+
+      - name: Prepare Tauri externalBin sidecar
+        shell: bash
+        run: ./scripts/prepare_sidecar_bin.sh
+        env:
+          CARGO_TARGET: ${{ matrix.target }}
+          PROFILE: release
+
+      - name: Stage CLI binary for upload
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cp "target/${{ matrix.target }}/release/glean.exe" "${{ matrix.cli_asset }}"
+          else
+            cp "target/${{ matrix.target }}/release/glean" "${{ matrix.cli_asset }}"
+          fi
+          chmod +x "${{ matrix.cli_asset }}"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ inputs.tag }}
+          retryAttempts: 5
+          releaseName: Glean Desktop v__VERSION__
+          releaseBody: |
+            Unsigned desktop builds for **${{ matrix.name }}**.
+
+            | Asset | Description |
+            |-------|-------------|
+            | `.dmg` / `.msi` | Glean Desktop installer |
+            | `${{ matrix.cli_asset }}` | Standalone `glean` CLI (terminal / MCP) |
+
+            macOS: if Gatekeeper blocks the app, open **System Settings → Privacy & Security** and allow it.
+            Windows: SmartScreen may warn on first run; choose **More info → Run anyway** if you trust this release.
+
+            Indexing in the desktop app uses bundled `glean daemon` (single writer).
+
+            Changelog: [apps/desktop/CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ inputs.tag }}/apps/desktop/CHANGELOG.md)
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Upload glean CLI to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ matrix.cli_asset }}
+          make_latest: false

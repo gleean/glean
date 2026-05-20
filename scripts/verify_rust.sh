@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Rust 门禁脚本：供本地 / Cursor Hook / CI 复用。
-# LanceDB pulls protobuf codegen - ensure `protoc` is on PATH (CI installs protobuf-compiler).
+# Rust gate: local / Cursor Hook. Mirrors rust.yml intent but includes glean-desktop.
+# CI (rust.yml) uses --exclude glean-desktop and skips WebKit; run this script locally for full workspace.
+# LanceDB needs protoc on PATH (CI: protobuf-compiler).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

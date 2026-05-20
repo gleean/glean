@@ -1,110 +1,22 @@
+# Entry points: tag push (PAT/human), manual re-run, or via release-please workflow_call.
 name: Release Desktop
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and upload (e.g. v0.1.2)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
-concurrency:
-  group: release-desktop-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: macos-aarch64
-            platform: macos-14
-            target: aarch64-apple-darwin
-            name: macOS Apple Silicon
-          - id: macos-x86_64
-            platform: macos-13
-            target: x86_64-apple-darwin
-            name: macOS Intel
-          - id: windows-x64
-            platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: Windows x64
-
-    runs-on: ${{ matrix.platform }}
-    name: ${{ matrix.name }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
-
-      - name: Install protoc (macOS)
-        if: runner.os == 'macOS'
-        run: brew install protobuf
-
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        run: choco install protoc -y
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            apps/cli
-            apps/desktop/src-tauri
-            packages/core
-            packages/host
-
-      - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Build glean CLI (sidecar)
-        run: cargo build -p glean-cli --release --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET: ${{ matrix.target }}
-
-      - name: Prepare Tauri externalBin sidecar
-        shell: bash
-        run: ./scripts/prepare_sidecar_bin.sh
-        env:
-          CARGO_TARGET: ${{ matrix.target }}
-          PROFILE: release
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          retryAttempts: 5
-          releaseName: Glean Desktop v__VERSION__
-          releaseBody: |
-            Unsigned desktop builds for **${{ matrix.name }}**.
-
-            | Platform | File |
-            |----------|------|
-            | macOS Apple Silicon | `.dmg` (aarch64) |
-            | macOS Intel | `.dmg` (x86_64) |
-            | Windows x64 | `.msi` / setup executable |
-
-            macOS: if Gatekeeper blocks the app, open **System Settings → Privacy & Security** and allow it.
-            Windows: SmartScreen may warn on first run; choose **More info → Run anyway** if you trust this release.
-
-            Indexing runs via bundled `glean daemon` sidecar (single writer).
-
-            Changelog: [apps/desktop/CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/apps/desktop/CHANGELOG.md)
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
+    uses: ./.github/workflows/release-desktop-reusable.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    secrets: inherit

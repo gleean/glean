@@ -70,8 +70,8 @@ Desktop versions are managed by **[release-please](https://github.com/googleapis
 
 1. Merge feature PRs with **Conventional Commits** (`feat:`, `fix:`, `feat!:` for breaking).
 2. Release-please opens a **Release PR** (bumps `package.json`, `tauri.conf.json`, `Cargo.toml`, `CHANGELOG.md`).
-3. **Merge the Release PR** → tag `vX.Y.Z` + GitHub Release notes.
-4. [`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml) builds **unsigned** macOS (Apple Silicon + Intel) and Windows x64 installers onto that Release.
+3. **Merge the Release PR** → tag `vX.Y.Z` + GitHub Release; **`build-desktop`** in the same run uploads **unsigned** `.dmg` / `.msi` and standalone **`glean-*`** CLI binaries.
+4. To re-run assets for an existing tag (e.g. `v0.1.2`): **Actions → Release Desktop → Run workflow** with that tag.
 
 Config: [`release-please-config.json`](../../release-please-config.json), [`.release-please-manifest.json`](../../.release-please-manifest.json).
 

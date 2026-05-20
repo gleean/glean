@@ -8,6 +8,10 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Skip version-only release commits from release-please (already validated on the Release PR).
+    if: >-
+      github.event_name == 'pull_request' ||
+      !contains(github.event.head_commit.message, 'chore(main): release')
     concurrency:
       group: rust-ci
       cancel-in-progress: true
@@ -15,36 +19,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Private submodule: create repo secret ENTERPRISE_SUBMODULE_PAT (fine-grained PAT, read-only on glean-enterprise).
           submodules: recursive
           token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
 
-      - name: Install system packages (Lance protoc + Tauri Linux deps)
+      - name: Install system packages (protoc only; no Tauri/WebKit on Linux CI)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            protobuf-compiler \
-            build-essential \
-            curl \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          sudo apt-get install -y protobuf-compiler build-essential libssl-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-ci
 
-      # Tauri externalBin resolves ../../../target/release/glean-<rustc-host-triple>; see scripts/prepare_sidecar_bin.sh
-      - name: Build sidecar binary for glean-desktop (Tauri externalBin)
-        run: |
-          cargo build -p glean-cli --release
-          bash scripts/prepare_sidecar_bin.sh
-
-      - name: Lint & test (mirrors scripts/verify_rust.sh)
+      - name: Lint and test (excludes glean-desktop; built on release matrix)
         run: |
           cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          cargo test --workspace
+          cargo clippy --workspace --all-targets --exclude glean-desktop -- -D warnings
+          cargo test --workspace --exclude glean-desktop
