@@ -81,9 +81,9 @@ Do **not** hand-tag for routine releases. See [`.docs/04-Ops-Security/desktop-re
 
 All invoke wrappers live in [`src/lib/tauri.ts`](src/lib/tauri.ts):
 
-- `pickWorkspace`, `getStatus`, `semanticSearch`, `daemonRunning`, `currentWorkspace`
-- `openDirectoryDialog` — used by context before `pick_workspace`
-- `isTauri()` — gate non-desktop environments
+- `pickWorkspace`, `tryRestoreWorkspace`, `getStatus`, `semanticSearch`, `recentChanges`, `readFileContext`
+- `daemonRunning`, `currentWorkspace`, `getGlobalConfigToml`, `setGlobalConfigKey`, `initGlobalConfig`
+- `revealPathInFileManager`, `openDirectoryDialog`, `isTauri()`
 
 See [`.docs/05-Desktop-UI/03-api-contract.md`](../../.docs/05-Desktop-UI/03-api-contract.md) for JSON shapes.
 

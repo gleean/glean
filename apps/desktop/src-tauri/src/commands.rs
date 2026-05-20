@@ -15,6 +15,16 @@ pub struct SearchHitDto {
     pub preview: String,
 }
 
+#[derive(Serialize)]
+pub struct RecentChangeDto {
+    pub path: String,
+    pub mtime_ms: i64,
+}
+
+/// Default cap for `read_file_context` (512 KiB); hard max 1 MiB.
+const DEFAULT_READ_FILE_MAX_BYTES: u64 = 512 * 1024;
+const HARD_READ_FILE_MAX_BYTES: u64 = 1024 * 1024;
+
 async fn apply_workspace(
     guard: &mut AppInner,
     workspace: PathBuf,
@@ -97,6 +107,67 @@ pub async fn semantic_search(
 pub async fn daemon_running(state: State<'_, AppState>) -> Result<bool, String> {
     let mut guard = state.lock().await;
     Ok(guard.daemon_running())
+}
+
+#[tauri::command]
+pub async fn recent_changes(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<RecentChangeDto>, String> {
+    let guard = state.lock().await;
+    let workspace = guard.workspace().map_err(|e: StateError| e.to_string())?;
+    let engine = guard.engine().map_err(|e: StateError| e.to_string())?;
+    let limit = limit.unwrap_or(50) as usize;
+    let rows = engine
+        .recent_changes(limit)
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(path_key, mtime_ns)| RecentChangeDto {
+            path: workspace.join(&path_key).to_string_lossy().into_owned(),
+            mtime_ms: mtime_ns / 1_000_000,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn read_file_context(
+    state: State<'_, AppState>,
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<String, String> {
+    let guard = state.lock().await;
+    let workspace = guard.workspace().map_err(|e: StateError| e.to_string())?;
+    let engine = guard.engine().map_err(|e: StateError| e.to_string())?;
+    let resolved = {
+        let raw = PathBuf::from(path.trim());
+        if raw.is_absolute() {
+            raw
+        } else {
+            workspace.join(&raw)
+        }
+    };
+    let cap = max_bytes
+        .unwrap_or(DEFAULT_READ_FILE_MAX_BYTES)
+        .min(HARD_READ_FILE_MAX_BYTES);
+    engine
+        .read_file_context(workspace, &resolved, cap)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn init_global_config(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<String, String> {
+    let path =
+        glean_host::config::init_global_config(force.unwrap_or(false)).map_err(|e| e.to_string())?;
+    let mut guard = state.lock().await;
+    guard
+        .reload_daemon_and_config()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

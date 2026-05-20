@@ -1,9 +1,9 @@
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import type { SearchHit, StatusReport } from "./types";
+import type { RecentChange, SearchHit, StatusReport } from "./types";
 
-export type { SearchHit, StatusReport } from "./types";
+export type { RecentChange, SearchHit, StatusReport } from "./types";
 
 export function isTauri(): boolean {
 	return typeof window !== "undefined" && tauriIsTauri();
@@ -45,6 +45,21 @@ export async function setGlobalConfigKey(
 	value: string,
 ): Promise<string> {
 	return invoke<string>("set_global_config_key", { key, value });
+}
+
+export async function recentChanges(limit?: number): Promise<RecentChange[]> {
+	return invoke<RecentChange[]>("recent_changes", { limit });
+}
+
+export async function readFileContext(
+	path: string,
+	maxBytes?: number,
+): Promise<string> {
+	return invoke<string>("read_file_context", { path, max_bytes: maxBytes });
+}
+
+export async function initGlobalConfig(force?: boolean): Promise<string> {
+	return invoke<string>("init_global_config", { force });
 }
 
 export async function revealPathInFileManager(path: string): Promise<void> {

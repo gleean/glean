@@ -21,3 +21,8 @@ export type SearchHit = {
 	path: string;
 	preview: string;
 };
+
+export type RecentChange = {
+	path: string;
+	mtime_ms: number;
+};

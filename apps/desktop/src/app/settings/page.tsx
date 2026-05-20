@@ -10,6 +10,7 @@ import { GleanPathRow } from "@/components/glean-path-row";
 import { useGleanApp } from "@/contexts/glean-app-context";
 import {
 	getGlobalConfigToml,
+	initGlobalConfig,
 	revealPathInFileManager,
 	setGlobalConfigKey,
 } from "@/lib/tauri";
@@ -90,6 +91,8 @@ export default function SettingsPage() {
 	const [rerankEnabled, setRerankEnabled] = useState(true);
 	const [logLevel, setLogLevel] = useState("info");
 	const [watchInterval, setWatchInterval] = useState("10");
+	const [maxFileSize, setMaxFileSize] = useState("10485760");
+	const [useGitignore, setUseGitignore] = useState(true);
 
 	const loadConfigFields = useCallback(async () => {
 		try {
@@ -104,6 +107,16 @@ export default function SettingsPage() {
 				/\[indexing\][\s\S]*?watch_interval\s*=\s*(\d+)/,
 			);
 			if (watchMatch) setWatchInterval(watchMatch[1]);
+			const maxMatch = toml.match(
+				/\[indexing\][\s\S]*?max_file_size\s*=\s*(\d+)/,
+			);
+			if (maxMatch) setMaxFileSize(maxMatch[1]);
+			const gitMatch = toml.match(
+				/\[indexing\][\s\S]*?use_gitignore\s*=\s*(\w+)/,
+			);
+			if (gitMatch) {
+				setUseGitignore(gitMatch[1].toLowerCase() === "true");
+			}
 		} catch (e) {
 			reportError(e instanceof Error ? e.message : String(e));
 		}
@@ -145,6 +158,34 @@ export default function SettingsPage() {
 			return;
 		}
 		await applyKey("indexing.watch_interval", String(n));
+	};
+
+	const onMaxFileSizeBlur = async () => {
+		const n = Number.parseInt(maxFileSize, 10);
+		if (Number.isNaN(n) || n < 0) {
+			reportError("max_file_size must be a non-negative integer (bytes)");
+			return;
+		}
+		await applyKey("indexing.max_file_size", String(n));
+	};
+
+	const onGitignoreChange = async (checked: boolean) => {
+		setUseGitignore(checked);
+		await applyKey("indexing.use_gitignore", checked ? "true" : "false");
+	};
+
+	const onInitConfig = async () => {
+		setSaving(true);
+		clearError();
+		try {
+			await initGlobalConfig(false);
+			await refresh();
+			await loadConfigFields();
+		} catch (e) {
+			reportError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setSaving(false);
+		}
 	};
 
 	const openConfigFolder = async () => {
@@ -237,9 +278,28 @@ export default function SettingsPage() {
 						control={<Switch disabled />}
 					/>
 					<Row
-						label="Skip files larger than max_file_size"
-						description="Configured in config.toml; daemon applies on reload."
-						control={<Switch disabled defaultChecked />}
+						label="Max file size (bytes)"
+						description="Files larger than this are skipped during indexing."
+						control={
+							<Input
+								value={maxFileSize}
+								onChange={(e) => setMaxFileSize(e.target.value)}
+								onBlur={() => void onMaxFileSizeBlur()}
+								disabled={saving}
+								className="h-8 w-32 font-mono text-[11px]"
+							/>
+						}
+					/>
+					<Row
+						label="Use .gitignore"
+						description="Respect ignore rules when scanning the workspace."
+						control={
+							<Switch
+								checked={useGitignore}
+								onCheckedChange={(v) => void onGitignoreChange(v)}
+								disabled={saving}
+							/>
+						}
 					/>
 				</Group>
 
@@ -259,6 +319,16 @@ export default function SettingsPage() {
 
 				<Group title="Actions">
 					<div className="flex flex-wrap gap-2 p-3">
+						{status && !status.global_config_exists ? (
+							<Button
+								variant="default"
+								size="sm"
+								disabled={saving}
+								onClick={() => void onInitConfig()}
+							>
+								Create default config
+							</Button>
+						) : null}
 						<Button
 							variant="outline"
 							size="sm"

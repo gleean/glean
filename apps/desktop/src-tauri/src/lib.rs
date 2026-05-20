@@ -24,8 +24,11 @@ pub fn run() {
             commands::semantic_search,
             commands::daemon_running,
             commands::current_workspace,
+            commands::recent_changes,
+            commands::read_file_context,
             commands::get_global_config_toml,
             commands::set_global_config_key,
+            commands::init_global_config,
             commands::reveal_path_in_file_manager,
         ])
         .on_window_event(|window, event| {

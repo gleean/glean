@@ -11,10 +11,20 @@ import {
 	CollapsibleTrigger,
 } from "@glean/ui/components/ui/collapsible";
 import { Skeleton } from "@glean/ui/components/ui/skeleton";
-import { AlertCircle, Check, ChevronDown, RefreshCw, X } from "lucide-react";
+import {
+	AlertCircle,
+	ArrowRight,
+	Check,
+	ChevronDown,
+	RefreshCw,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { GleanNoWorkspace } from "@/components/glean-no-workspace";
 import { GleanPathRow } from "@/components/glean-path-row";
 import { useGleanApp } from "@/contexts/glean-app-context";
+import { recentChanges, revealPathInFileManager } from "@/lib/tauri";
+import type { RecentChange } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function StatPill({ ok, label }: { ok: boolean; label: string }) {
@@ -107,8 +117,48 @@ function SectionCard({
 	);
 }
 
+function formatMtime(ms: number): string {
+	if (ms <= 0) return "—";
+	try {
+		return new Date(ms).toLocaleString();
+	} catch {
+		return String(ms);
+	}
+}
+
+function basename(p: string) {
+	const parts = p.split(/[\\/]/).filter(Boolean);
+	return parts[parts.length - 1] ?? p;
+}
+
 export default function IndexPage() {
-	const { workspace, status, loading, refresh } = useGleanApp();
+	const { workspace, status, loading, refresh, reportError } = useGleanApp();
+	const [changes, setChanges] = useState<RecentChange[]>([]);
+	const [changesLoading, setChangesLoading] = useState(false);
+
+	const loadChanges = useCallback(async () => {
+		if (!workspace) {
+			setChanges([]);
+			return;
+		}
+		setChangesLoading(true);
+		try {
+			setChanges(await recentChanges(50));
+		} catch (e) {
+			setChanges([]);
+			reportError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setChangesLoading(false);
+		}
+	}, [workspace, reportError]);
+
+	useEffect(() => {
+		void loadChanges();
+	}, [loadChanges]);
+
+	const onRefresh = () => {
+		void refresh().then(() => loadChanges());
+	};
 
 	return (
 		<div className="flex flex-col">
@@ -118,7 +168,7 @@ export default function IndexPage() {
 				actions={
 					<button
 						type="button"
-						onClick={() => refresh()}
+						onClick={onRefresh}
 						disabled={loading}
 						className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-card px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:border-accent/40 hover:bg-accent-soft disabled:opacity-50"
 					>
@@ -141,7 +191,6 @@ export default function IndexPage() {
 					</div>
 				) : (
 					<>
-						{/* Tile row */}
 						<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
 							<StatTile
 								label="Index version"
@@ -186,7 +235,6 @@ export default function IndexPage() {
 							</div>
 						</div>
 
-						{/* Alerts */}
 						{status.legacy_global_index ? (
 							<Alert variant="destructive">
 								<AlertCircle className="h-4 w-4" />
@@ -206,6 +254,60 @@ export default function IndexPage() {
 								</AlertDescription>
 							</Alert>
 						) : null}
+
+						<SectionCard
+							title="Recent changes"
+							meta={`shadow file_meta · ${changes.length} shown`}
+						>
+							{changesLoading ? (
+								<div className="space-y-2 py-2">
+									<Skeleton className="h-8 w-full" />
+									<Skeleton className="h-8 w-full" />
+									<Skeleton className="h-8 w-full" />
+								</div>
+							) : changes.length === 0 ? (
+								<p className="py-4 text-[12px] text-muted-foreground">
+									No indexed file changes yet. Run the daemon and edit files in
+									this workspace.
+								</p>
+							) : (
+								<ul className="divide-y divide-border/60">
+									{changes.map((c) => (
+										<li
+											key={`${c.path}-${c.mtime_ms}`}
+											className="flex items-center gap-3 py-2.5"
+										>
+											<div className="min-w-0 flex-1">
+												<div className="truncate text-[12.5px] font-medium">
+													{basename(c.path)}
+												</div>
+												<div className="truncate font-mono text-[10.5px] text-muted-foreground">
+													{c.path}
+												</div>
+												<div className="mt-0.5 text-[10.5px] text-muted-foreground/80">
+													{formatMtime(c.mtime_ms)}
+												</div>
+											</div>
+											<button
+												type="button"
+												title="Reveal in file manager"
+												className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[10.5px] text-muted-foreground hover:bg-muted/60"
+												onClick={() => {
+													void revealPathInFileManager(c.path).catch((e) =>
+														reportError(
+															e instanceof Error ? e.message : String(e),
+														),
+													);
+												}}
+											>
+												Reveal
+												<ArrowRight className="h-3 w-3" />
+											</button>
+										</li>
+									))}
+								</ul>
+							)}
+						</SectionCard>
 
 						<SectionCard title="Storage layout" meta="on-device · inspectable">
 							<GleanPathRow label="Workspace" value={status.workspace_root} />

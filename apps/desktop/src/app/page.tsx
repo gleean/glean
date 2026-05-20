@@ -4,7 +4,11 @@ import { ArrowRight, FileText, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GleanNoWorkspace } from "@/components/glean-no-workspace";
 import { useGleanApp } from "@/contexts/glean-app-context";
-import { revealPathInFileManager, semanticSearch } from "@/lib/tauri";
+import {
+	readFileContext,
+	revealPathInFileManager,
+	semanticSearch,
+} from "@/lib/tauri";
 import type { SearchHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +55,11 @@ export default function HomePage() {
 	const [loading, setLoading] = useState(false);
 	const [submitted, setSubmitted] = useState<string | null>(null);
 	const [activeIdx, setActiveIdx] = useState<number>(0);
+	const [fileContext, setFileContext] = useState<string | null>(null);
+	const [fileContextLoading, setFileContextLoading] = useState(false);
+	const [fileContextError, setFileContextError] = useState<string | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const fileContextGen = useRef(0);
 
 	useEffect(() => {
 		inputRef.current?.focus();
@@ -75,6 +83,32 @@ export default function HomePage() {
 	};
 
 	const active = useMemo(() => hits[activeIdx] ?? null, [hits, activeIdx]);
+
+	useEffect(() => {
+		if (!active?.path) {
+			setFileContext(null);
+			setFileContextError(null);
+			setFileContextLoading(false);
+			return;
+		}
+		const gen = ++fileContextGen.current;
+		setFileContextLoading(true);
+		setFileContextError(null);
+		setFileContext(null);
+		void readFileContext(active.path)
+			.then((text) => {
+				if (fileContextGen.current !== gen) return;
+				setFileContext(text);
+			})
+			.catch((e) => {
+				if (fileContextGen.current !== gen) return;
+				setFileContext(null);
+				setFileContextError(e instanceof Error ? e.message : String(e));
+			})
+			.finally(() => {
+				if (fileContextGen.current === gen) setFileContextLoading(false);
+			});
+	}, [active?.path]);
 
 	if (!workspace) {
 		return (
@@ -217,13 +251,38 @@ export default function HomePage() {
 							</div>
 							<div className="flex-1 overflow-y-auto p-6">
 								<div className="mb-3 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
-									Matched preview
+									Matched chunk
 								</div>
-								<div className="rounded-lg border border-border/70 bg-card p-5">
+								<div className="mb-6 rounded-lg border border-border/70 bg-card p-5">
 									<pre className="whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-foreground/90">
 										{highlight(active.preview, submitted ?? "")}
 									</pre>
 								</div>
+								<div className="mb-3 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+									File excerpt
+								</div>
+								{fileContextLoading ? (
+									<div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+										Loading file…
+									</div>
+								) : fileContextError ? (
+									<p className="text-[12px] text-destructive">
+										{fileContextError}
+									</p>
+								) : fileContext ? (
+									<div className="rounded-lg border border-border/70 bg-card p-5">
+										<pre className="max-h-[min(50vh,480px)] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-foreground/85">
+											{fileContext.length > 80_000
+												? `${fileContext.slice(0, 80_000)}\n… (truncated for display)`
+												: fileContext}
+										</pre>
+									</div>
+								) : (
+									<p className="text-[12px] text-muted-foreground">
+										No file content loaded.
+									</p>
+								)}
 							</div>
 						</>
 					) : (
