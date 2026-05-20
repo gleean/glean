@@ -17,7 +17,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ensure-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Create GitHub Release (idempotent)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: Glean Desktop ${{ inputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          make_latest: true
+
   release:
+    needs: ensure-release
     strategy:
       fail-fast: false
       matrix:
@@ -101,35 +120,34 @@ jobs:
           fi
           chmod +x "${{ matrix.cli_asset }}"
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri desktop bundle
+        run: pnpm --filter @glean/desktop tauri build -- --target ${{ matrix.target }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ inputs.tag }}
-          retryAttempts: 5
-          releaseName: Glean Desktop v__VERSION__
-          releaseBody: |
-            Unsigned desktop builds for **${{ matrix.name }}**.
+          CI: true
 
-            | Asset | Description |
-            |-------|-------------|
-            | `.dmg` / `.msi` | Glean Desktop installer |
-            | `${{ matrix.cli_asset }}` | Standalone `glean` CLI (terminal / MCP) |
+      - name: Upload desktop and CLI assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          TARGET="${{ matrix.target }}"
+          assets=("${{ matrix.cli_asset }}")
 
-            macOS: if Gatekeeper blocks the app, open **System Settings → Privacy & Security** and allow it.
-            Windows: SmartScreen may warn on first run; choose **More info → Run anyway** if you trust this release.
+          shopt -s nullglob
+          if [[ "$TARGET" == *windows* ]]; then
+            assets+=(target/"$TARGET"/release/bundle/msi/*.msi)
+            assets+=(target/"$TARGET"/release/bundle/nsis/*.exe)
+          else
+            assets+=(target/"$TARGET"/release/bundle/dmg/*.dmg)
+          fi
 
-            Indexing in the desktop app uses bundled `glean daemon` (single writer).
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "error: no release assets found for $TARGET" >&2
+            find "target/$TARGET/release/bundle" -type f 2>/dev/null || true
+            exit 1
+          fi
 
-            Changelog: [apps/desktop/CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ inputs.tag }}/apps/desktop/CHANGELOG.md)
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
-
-      - name: Upload glean CLI to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          files: ${{ matrix.cli_asset }}
-          make_latest: false
+          echo "Uploading ${#assets[@]} asset(s) to $TAG"
+          gh release upload "$TAG" "${assets[@]}" --clobber

@@ -8,9 +8,9 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      # Monorepo path `apps/desktop` — not root `release_created` / `tag_name` (see release-please-action README).
-      release_created: ${{ steps.release.outputs['apps/desktop--release_created'] }}
-      tag_name: ${{ steps.release.outputs['apps/desktop--tag_name'] }}
+      # Job outputs cannot read path-scoped step outputs (apps/desktop--*); bridge via export step.
+      releases_created: ${{ steps.export.outputs.releases_created }}
+      tag_name: ${{ steps.export.outputs.tag_name }}
     permissions:
       contents: write
       pull-requests: write
@@ -19,22 +19,30 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          # Optional secret RELEASE_PLEASE_TOKEN (PAT): tag push may trigger on: push:tags as backup.
-          # Primary desktop build uses build-desktop workflow_call below (GITHUB_TOKEN tags do not).
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # PAT recommended: GITHUB_TOKEN tags/releases do not chain-trigger other workflows.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN != '' && secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Log release outputs
-        if: always()
+      - name: Export release outputs
+        id: export
+        env:
+          RELEASES_CREATED: ${{ steps.release.outputs.releases_created }}
+          DESKTOP_RELEASE_CREATED: ${{ steps.release.outputs['apps/desktop--release_created'] }}
+          TAG_NAME: ${{ steps.release.outputs['apps/desktop--tag_name'] }}
         run: |
-          echo "apps/desktop--release_created=${{ steps.release.outputs['apps/desktop--release_created'] }}"
-          echo "apps/desktop--tag_name=${{ steps.release.outputs['apps/desktop--tag_name'] }}"
+          if [[ "${DESKTOP_RELEASE_CREATED}" == "true" || "${RELEASES_CREATED}" == "true" ]]; then
+            echo "releases_created=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "releases_created=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "release-please releases_created=${RELEASES_CREATED} apps/desktop=${DESKTOP_RELEASE_CREATED} tag=${TAG_NAME}"
 
   build-desktop:
     needs: release-please
     if: >-
-      needs.release-please.outputs.release_created == 'true' &&
+      needs.release-please.outputs.releases_created == 'true' &&
       needs.release-please.outputs.tag_name != ''
     permissions:
       contents: write
