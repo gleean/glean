@@ -16,7 +16,7 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           # PAT recommended: GITHUB_TOKEN tags/releases do not chain-trigger other workflows.
