@@ -7,11 +7,10 @@ on:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    # Required for opening/updating the Release PR. If you still see:
-    # "GitHub Actions is not permitted to create or approve pull requests",
-    # enable in repo Settings → Actions → General:
-    # - Workflow permissions: Read and write permissions
-    # - Allow GitHub Actions to create and approve pull requests
+    # Repo Settings → Actions → General: enable BOTH read/write workflow permissions
+    # AND "Allow GitHub Actions to create and approve pull requests" (off by default for
+    # new personal repos). YAML permissions alone do not enable PR creation; see:
+    # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests
     permissions:
       contents: write
       pull-requests: write
