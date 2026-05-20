@@ -25,9 +25,17 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      - name: Log release outputs
+        if: always()
+        run: |
+          echo "apps/desktop--release_created=${{ steps.release.outputs['apps/desktop--release_created'] }}"
+          echo "apps/desktop--tag_name=${{ steps.release.outputs['apps/desktop--tag_name'] }}"
+
   build-desktop:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: >-
+      needs.release-please.outputs.release_created == 'true' &&
+      needs.release-please.outputs.tag_name != ''
     permissions:
       contents: write
     uses: ./.github/workflows/release-desktop-reusable.yml

@@ -28,7 +28,7 @@ jobs:
             name: macOS Apple Silicon
             cli_asset: glean-aarch64-apple-darwin
           - id: macos-x86_64
-            platform: macos-13
+            platform: macos-15-intel
             target: x86_64-apple-darwin
             name: macOS Intel
             cli_asset: glean-x86_64-apple-darwin
@@ -46,7 +46,7 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           submodules: recursive
-          token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT }}
+          token: ${{ secrets.ENTERPRISE_SUBMODULE_PAT != '' && secrets.ENTERPRISE_SUBMODULE_PAT || github.token }}
 
       - name: Install protoc (macOS)
         if: runner.os == 'macOS'
