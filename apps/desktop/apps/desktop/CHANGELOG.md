@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gleean/glean/compare/v0.3.0...v0.4.0) (2026-05-21)
+
+
+### Features
+
+* **desktop:** update tauri config, core embedding, and docs for desktop release ([5402581](https://github.com/gleean/glean/commit/5402581c8dcd18986a9f525b4e39b326b45435a9))
+
 ## [0.3.0](https://github.com/gleean/glean/compare/v0.2.0...v0.3.0) (2026-05-21)
 
 
