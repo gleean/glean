@@ -86,7 +86,10 @@ impl FastembedEmbedder {
     /// `model_cache_dir` must be an absolute, writable directory for HF / ONNX artifacts.
     /// FastEmbed's default is a **relative** `.fastembed_cache` (cwd-dependent); GUI apps often
     /// have cwd `/` or read-only, which causes `Failed to retrieve model.onnx`.
-    pub fn new_from_config(cfg: &EmbeddingConfig, model_cache_dir: &Path) -> Result<Self, CoreError> {
+    pub fn new_from_config(
+        cfg: &EmbeddingConfig,
+        model_cache_dir: &Path,
+    ) -> Result<Self, CoreError> {
         std::fs::create_dir_all(model_cache_dir).map_err(|e| {
             CoreError::Msg(format!(
                 "mkdir embedding model cache {}: {e}",
@@ -116,7 +119,10 @@ impl FastembedEmbedder {
     pub fn new() -> Result<Self, CoreError> {
         let dir = std::env::temp_dir().join("glean-fastembed-default");
         std::fs::create_dir_all(&dir).map_err(|e| {
-            CoreError::Msg(format!("mkdir {} for FastembedEmbedder::new: {e}", dir.display()))
+            CoreError::Msg(format!(
+                "mkdir {} for FastembedEmbedder::new: {e}",
+                dir.display()
+            ))
         })?;
         Self::new_from_config(&EmbeddingConfig::default(), &dir)
     }
