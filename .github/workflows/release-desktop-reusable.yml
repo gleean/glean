@@ -121,8 +121,21 @@ jobs:
           fi
           chmod +x "${{ matrix.cli_asset }}"
 
+      - name: Verify Tauri externalBin sidecars
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la apps/desktop/src-tauri/binaries/
+          shopt -s nullglob
+          for f in apps/desktop/src-tauri/binaries/glean-*; do
+            echo "--- $f"
+            file "$f" || true
+          done
+
       - name: Build Tauri desktop bundle
-        run: pnpm --filter @glean/desktop tauri build -- --target ${{ matrix.target }}
+        shell: bash
+        # Pass `-t` to tauri-cli (not `--` runner args only). `tauri build -- --target …` forwards to Cargo, which can confuse bundling/externalBin.
+        run: pnpm --filter @glean/desktop run tauri -- build -t ${{ matrix.target }} -v
         env:
           CI: true
 

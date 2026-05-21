@@ -1,5 +1,6 @@
 //! FastEmbed (ONNX) backend — model and EP from [`crate::config::EmbeddingConfig`].
 
+use std::path::Path;
 use std::sync::Mutex;
 
 use fastembed::{
@@ -81,14 +82,26 @@ fn execution_providers(device: &str) -> Result<Vec<ExecutionProviderDispatch>, C
 
 impl FastembedEmbedder {
     /// Build from merged config (model name, declared dimension, execution providers).
-    pub fn new_from_config(cfg: &EmbeddingConfig) -> Result<Self, CoreError> {
+    ///
+    /// `model_cache_dir` must be an absolute, writable directory for HF / ONNX artifacts.
+    /// FastEmbed's default is a **relative** `.fastembed_cache` (cwd-dependent); GUI apps often
+    /// have cwd `/` or read-only, which causes `Failed to retrieve model.onnx`.
+    pub fn new_from_config(cfg: &EmbeddingConfig, model_cache_dir: &Path) -> Result<Self, CoreError> {
+        std::fs::create_dir_all(model_cache_dir).map_err(|e| {
+            CoreError::Msg(format!(
+                "mkdir embedding model cache {}: {e}",
+                model_cache_dir.display()
+            ))
+        })?;
+
         let model = resolve_embedding_model(&cfg.model)?;
         validate_embedding_dims(cfg, &model)?;
         let eps = execution_providers(&cfg.device)?;
 
         let opts = TextInitOptions::new(model)
             .with_execution_providers(eps)
-            .with_show_download_progress(false);
+            .with_show_download_progress(false)
+            .with_cache_dir(model_cache_dir.to_path_buf());
 
         let inner =
             TextEmbedding::try_new(opts).map_err(|e| CoreError::Embedding(e.to_string()))?;
@@ -99,9 +112,13 @@ impl FastembedEmbedder {
         Ok(slf)
     }
 
-    /// Same as [`Self::new_from_config`] with [`EmbeddingConfig::default`].
+    /// Same as [`Self::new_from_config`] with [`EmbeddingConfig::default`] and a temp dir (tests / smoke).
     pub fn new() -> Result<Self, CoreError> {
-        Self::new_from_config(&EmbeddingConfig::default())
+        let dir = std::env::temp_dir().join("glean-fastembed-default");
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            CoreError::Msg(format!("mkdir {} for FastembedEmbedder::new: {e}", dir.display()))
+        })?;
+        Self::new_from_config(&EmbeddingConfig::default(), &dir)
     }
 
     fn smoke_check_dim(&self) -> Result<(), CoreError> {
@@ -185,7 +202,8 @@ mod tests {
             dimension: 999,
             ..Default::default()
         };
-        let err = match FastembedEmbedder::new_from_config(&cfg) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let err = match FastembedEmbedder::new_from_config(&cfg, dir.path()) {
             Err(e) => e,
             Ok(_) => panic!("expected dimension validation error"),
         };
@@ -208,7 +226,8 @@ mod tests {
             device: "tensorrt".into(),
             ..Default::default()
         };
-        let err = match FastembedEmbedder::new_from_config(&cfg) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let err = match FastembedEmbedder::new_from_config(&cfg, dir.path()) {
             Err(e) => e,
             Ok(_) => panic!("expected unsupported device"),
         };
@@ -226,7 +245,8 @@ mod tests {
             device: "coreml".into(),
             ..Default::default()
         };
-        let err = match FastembedEmbedder::new_from_config(&cfg) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let err = match FastembedEmbedder::new_from_config(&cfg, dir.path()) {
             Err(e) => e,
             Ok(_) => panic!("expected CoreML rejection off macOS"),
         };

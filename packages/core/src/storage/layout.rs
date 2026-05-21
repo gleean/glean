@@ -38,6 +38,11 @@ impl GlobalLayout {
         self.root.join("cache").join("reranker")
     }
 
+    /// ONNX + HF artifacts for FastEmbed text embeddings (`model.onnx`, tokenizer, etc.).
+    pub fn embedding_model_cache_dir(&self) -> PathBuf {
+        self.root.join("cache").join("embedding")
+    }
+
     pub fn logs_directory(&self) -> PathBuf {
         self.root.join("logs")
     }
@@ -45,6 +50,7 @@ impl GlobalLayout {
     /// Ensure cache/logs dirs exist (not project index).
     pub fn ensure_global_directories(&self) -> Result<(), StorageError> {
         create_dir(&self.reranker_cache_dir())?;
+        create_dir(&self.embedding_model_cache_dir())?;
         create_dir(&self.logs_directory())?;
         Ok(())
     }
@@ -88,19 +94,31 @@ impl WorkspaceIndexLayout {
 }
 
 fn glean_home_from_env() -> Result<PathBuf, StorageError> {
-    let root = env::var("GLEAN_STORAGE_ROOT")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".glean")
-        });
-    if root.as_os_str().is_empty() {
-        return Err(StorageError::EmptyRoot);
+    if let Ok(s) = env::var("GLEAN_STORAGE_ROOT") {
+        let t = s.trim();
+        if !t.is_empty() {
+            return Ok(PathBuf::from(t));
+        }
     }
-    Ok(root)
+
+    // Prefer a real home directory — never use cwd-relative "." here: GUI / sidecar processes
+    // often have cwd `/` or read-only roots, which would make `/.glean` or `./.glean` unusable.
+    if let Some(h) = dirs::home_dir() {
+        return Ok(h.join(".glean"));
+    }
+    if let Ok(h) = env::var("HOME") {
+        if !h.trim().is_empty() {
+            return Ok(PathBuf::from(h).join(".glean"));
+        }
+    }
+    #[cfg(windows)]
+    if let Ok(h) = env::var("USERPROFILE") {
+        if !h.trim().is_empty() {
+            return Ok(PathBuf::from(h).join(".glean"));
+        }
+    }
+
+    Ok(env::temp_dir().join("glean-global"))
 }
 
 fn create_dir(path: &Path) -> Result<(), StorageError> {

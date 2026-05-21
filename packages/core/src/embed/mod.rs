@@ -10,6 +10,8 @@ pub use deterministic::DeterministicEmbedder;
 #[cfg(feature = "fastembed")]
 pub use fastembed_backend::FastembedEmbedder;
 
+use std::path::Path;
+
 use crate::error::CoreError;
 use crate::store::lance_chunks::EMBEDDING_DIM;
 
@@ -23,18 +25,23 @@ pub trait Embedder: Send + Sync {
 }
 
 /// Default backend for CLI / daemon (requires the `fastembed` feature).
+/// `embedding_model_cache` should be a stable writable directory (e.g. [`crate::storage::GlobalLayout::embedding_model_cache_dir`]);
+/// FastEmbed defaults to a **relative** `.fastembed_cache` which breaks GUI apps whose cwd is `/` or read-only.
 #[cfg(feature = "fastembed")]
 pub fn default_embedder(
     embedding: &crate::config::EmbeddingConfig,
+    embedding_model_cache: &Path,
 ) -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
     Ok(std::sync::Arc::new(FastembedEmbedder::new_from_config(
         embedding,
+        embedding_model_cache,
     )?))
 }
 
 #[cfg(not(feature = "fastembed"))]
 pub fn default_embedder(
     _: &crate::config::EmbeddingConfig,
+    _: &Path,
 ) -> Result<std::sync::Arc<dyn Embedder>, CoreError> {
     Err(CoreError::Msg(
         "glean-core was built without the `fastembed` feature; enable default features or `fastembed` and rebuild"

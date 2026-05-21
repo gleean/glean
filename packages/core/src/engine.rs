@@ -155,6 +155,7 @@ impl GleanEngine {
         if slot.is_none() {
             *slot = Some(crate::embed::default_embedder(
                 &self.runtime_config().embedding,
+                &self.global_layout.embedding_model_cache_dir(),
             )?);
         }
         Ok(slot

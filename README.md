@@ -100,7 +100,7 @@ This server speaks **newline-delimited JSON-RPC 2.0** with MCP-shaped methods:
 
 Environment:
 
-- **`GLEAN_STORAGE_ROOT`**: global home — `config.toml`, `cache/reranker/`, `logs/` (defaults to `~/.glean`).
+- **`GLEAN_STORAGE_ROOT`**: global home — `config.toml`, **`cache/embedding/`** (FastEmbed `model.onnx` + tokenizer downloads), **`cache/reranker/`**, `logs/` (defaults to `~/.glean`).
 - **`GLEAN_WORKSPACE_ROOT`**: workspace root for MCP / daemon (optional; defaults to cwd). Per-project index lives at **`<workspace>/.glean/`** (`metadata/index.db`, `vectors/` only — no config file there).
 - **`GLEAN_LOG`**: optional filter for **`tracing`** on stderr and rolling files (same syntax as `tracing_subscriber::EnvFilter`, e.g. `info`, `glean_core=debug`). If unset: MCP / `glean status` use **info** on both stderr and rolling files; **`glean daemon`** uses **info** for rolling files and **warn** on stderr. The `glean` binary does **not** read **`RUST_LOG`**.
 - **Runtime TOML** (optional): merged from **`$GLEAN_STORAGE_ROOT/config.toml`** only (defaults + global). **`[indexing].watch_interval`** is in **seconds**; **`0`** = daemon **initial sync only**. See `.docs/04-Ops-Security/local-storage-model.md` for multi-workspace index layout. **`glean config list`** / **`init`** / **`set`** operate on global config; **`glean models pull rerank`** pre-downloads the BGE cache under global storage.
@@ -109,7 +109,7 @@ Rolling logs also land under **`{GLEAN_STORAGE_ROOT}/logs/`** (`cli.yyyy-mm-dd` 
 
 ### Embedding model & rebuilding the vector index
 
-Chunks are embedded with **FastEmbed** using **`AllMiniLM-L6-v2`** (**384-dimensional** `Float32` vectors) and stored in LanceDB `document_chunks` (see `.docs/02-Developer-Guide/lancedb-schema.md`). The ONNX artifacts download on first use under the FastEmbed cache directory.
+Chunks are embedded with **FastEmbed** using **`AllMiniLM-L6-v2`** (**384-dimensional** `Float32` vectors) and stored in LanceDB `document_chunks` (see `.docs/02-Developer-Guide/lancedb-schema.md`). The ONNX artifacts download on first use into **`$GLEAN_STORAGE_ROOT/cache/embedding/`** (not the process working directory — required for packaged desktop apps).
 
 If you upgrade Glean and see **`LanceDB schema mismatch`**, stop running processes, delete **`<workspace>/.glean/vectors`** (or the whole `.glean` folder), then run **`glean daemon`** again to reindex that workspace.
 

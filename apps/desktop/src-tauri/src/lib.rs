@@ -14,6 +14,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Pin global storage for the whole process tree: CLI/daemon consult `GLEAN_STORAGE_ROOT`;
+            // the packaged app must not rely on cwd for an implicit default.
+            if std::env::var_os("GLEAN_STORAGE_ROOT").is_none() {
+                if let Ok(layout) = glean_core::GlobalLayout::from_env_or_default() {
+                    std::env::set_var("GLEAN_STORAGE_ROOT", layout.root.as_os_str());
+                }
+            }
             app.manage(Arc::new(Mutex::new(state::AppInner::default())) as AppState);
             Ok(())
         })

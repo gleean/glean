@@ -93,8 +93,10 @@ See [`.docs/05-Desktop-UI/03-api-contract.md`](../../.docs/05-Desktop-UI/03-api-
 |----------|---------|
 | `GLEAN_BIN` | Override path to `glean` for sidecar |
 | `GLEAN_WORKSPACE_ROOT` | Set when picking workspace in UI |
-| `GLEAN_STORAGE_ROOT` | Global home (`~/.glean`) |
+| `GLEAN_STORAGE_ROOT` | Global home (default `~/.glean`). If unset when the app starts, **glean-desktop** sets it to that resolved default so the UI process and the **`glean daemon`** sidecar always agree on an **absolute** path (avoids cwd-dependent bugs from Finder / Dock launches). |
 | `TAURI_DEV_HOST` | Dev asset host (default `localhost`) |
+
+**Storage layout (dev and release builds):** Same rules as the CLI — global **`config.toml`**, **`cache/embedding/`** (FastEmbed / `model.onnx`), **`cache/reranker/`**, **`logs/`** under `GLEAN_STORAGE_ROOT`; per-project index is **`<workspace>/.glean/`** only. Nothing is anchored to the process **current working directory**.
 
 ## Verify
 
