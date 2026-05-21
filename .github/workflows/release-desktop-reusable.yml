@@ -46,11 +46,12 @@ jobs:
             target: aarch64-apple-darwin
             name: macOS Apple Silicon
             cli_asset: glean-aarch64-apple-darwin
-          - id: macos-x86_64
-            platform: macos-15-intel
-            target: x86_64-apple-darwin
-            name: macOS Intel
-            cli_asset: glean-x86_64-apple-darwin
+          # macOS Intel — disabled until x86_64-apple-darwin has ONNX Runtime (ort-sys) prebuilts or a custom/link-from-source setup.
+          # - id: macos-x86_64
+          #   platform: macos-15-intel
+          #   target: x86_64-apple-darwin
+          #   name: macOS Intel
+          #   cli_asset: glean-x86_64-apple-darwin
           - id: windows-x64
             platform: windows-latest
             target: x86_64-pc-windows-msvc
@@ -137,7 +138,6 @@ jobs:
 
           shopt -s nullglob
           if [[ "$TARGET" == *windows* ]]; then
-            assets+=(target/"$TARGET"/release/bundle/msi/*.msi)
             assets+=(target/"$TARGET"/release/bundle/nsis/*.exe)
           else
             assets+=(target/"$TARGET"/release/bundle/dmg/*.dmg)

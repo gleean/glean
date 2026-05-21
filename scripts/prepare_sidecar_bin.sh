@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy glean CLI to target/release/glean-<triple> for Tauri externalBin bundling.
+# Copy glean CLI into apps/desktop/src-tauri/binaries/glean-<triple> for Tauri externalBin bundling.
 # Usage: CARGO_TARGET=aarch64-apple-darwin PROFILE=release ./scripts/prepare_sidecar_bin.sh
 
 set -euo pipefail
@@ -18,7 +18,8 @@ else
 	ALT="target/debug/glean"
 fi
 
-DST_DIR="target/release"
+# Tauri resolves externalBin paths relative to src-tauri/ (see bundle.externalBin).
+DST_DIR="${REPO_ROOT}/apps/desktop/src-tauri/binaries"
 mkdir -p "$DST_DIR"
 
 if [[ "$TARGET_TRIPLE" == *"windows"* ]]; then

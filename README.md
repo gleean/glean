@@ -29,7 +29,7 @@ The binary is emitted as `target/release/glean`.
 
 ### Desktop app (Tauri + Next.js)
 
-See [`apps/desktop/README.md`](apps/desktop/README.md). **Releases**: [release-please](https://github.com/googleapis/release-please) on `main` opens a Release PR; merging it tags `v*` and builds macOS (Apple Silicon / Intel) and Windows installers — [ops notes (local)](.docs/04-Ops-Security/desktop-release.md).
+See [`apps/desktop/README.md`](apps/desktop/README.md). **Releases**: [release-please](https://github.com/googleapis/release-please) on `main` opens a Release PR; merging it tags `v*` and builds macOS Apple Silicon (`.dmg`), Windows NSIS installer (`.exe`), and standalone `glean-*` CLI binaries — [ops notes (local)](.docs/04-Ops-Security/desktop-release.md).
 
 **Troubleshooting release-please** (`GitHub Actions is not permitted to create or approve pull requests`): [POST /repos/.../pulls](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request) returns **403** when the token cannot create PRs. Workflow `permissions:` alone is not enough: in **Repository → Settings → Actions → General → Workflow permissions**, choose **Read and write permissions** and turn on **Allow GitHub Actions to create and approve pull requests**. [GitHub’s docs](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests) state that *by default*, new repositories under a personal account **do not** allow Actions to create or approve pull requests until this is enabled (organizations inherit org defaults). If policy blocks `GITHUB_TOKEN`, use a machine user **PAT** with `contents` and `pull-requests` access, store it as a repo secret, and pass it to `googleapis/release-please-action` as `token`.
 
@@ -131,7 +131,7 @@ Treat [`.github/workflows/rust.yml`](.github/workflows/rust.yml) as the shared *
 - Optional **Cursor Hooks** (e.g. on `stop`) pointing at `scripts/verify_rust.sh` are a **local productivity aid**. They are not required for correctness.
 - **`rust.yml`**: PR + non-release pushes to `main`; `--exclude glean-desktop` (faster than full workspace).
 - **`scripts/verify_rust.sh`**: local full workspace including desktop/Tauri sidecar prep.
-- **Releases**: download **`.dmg` / `.msi` / `glean-*`** from GitHub Releases — not the auto-generated **Source code** zip only.
+- **Releases**: download **`.dmg`**, Windows **NSIS setup `.exe`**, and **`glean-*`** CLI binaries from GitHub Releases — not the auto-generated **Source code** zip only.
 
 ## License
 

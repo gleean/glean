@@ -62,7 +62,7 @@ pnpm --filter @glean/desktop build    # → apps/desktop/out
 pnpm --filter @glean/desktop tauri build
 ```
 
-The sidecar script copies `target/*/release/glean` to `target/release/glean-<triple>` for Tauri `externalBin` bundling.
+The sidecar script copies `target/*/release/glean` into `apps/desktop/src-tauri/binaries/glean-<triple>` for Tauri `externalBin` bundling (`bundle.targets`: DMG + NSIS only — MSI/WiX is skipped because it conflicts with external binaries in upstream Tauri).
 
 ## GitHub Release (release-please)
 
@@ -70,7 +70,7 @@ Desktop versions are managed by **[release-please](https://github.com/googleapis
 
 1. Merge feature PRs with **Conventional Commits** (`feat:`, `fix:`, `feat!:` for breaking).
 2. Release-please opens a **Release PR** (bumps `package.json`, `tauri.conf.json`, `Cargo.toml`, `CHANGELOG.md`).
-3. **Merge the Release PR** → tag `vX.Y.Z` + GitHub Release; **`build-desktop`** in the same run uploads **unsigned** `.dmg` / `.msi` and standalone **`glean-*`** CLI binaries.
+3. **Merge the Release PR** → tag `vX.Y.Z` + GitHub Release; **`build-desktop`** uploads **unsigned** `.dmg`, Windows **NSIS** `.exe` installer, and standalone **`glean-*`** CLI binaries (no MSI — see bundle config).
 4. To re-run assets for an existing tag (e.g. `v0.1.2`): **Actions → Release Desktop → Run workflow** with that tag.
 
 Config: [`release-please-config.json`](../../release-please-config.json), [`.release-please-manifest.json`](../../.release-please-manifest.json).
