@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/gleean/glean/compare/v0.2.0...v0.3.0) (2026-05-21)
+
+
+### Features
+
+* **desktop:** improve Tauri sidecar integration, docs, and .gitignore ([71d042d](https://github.com/gleean/glean/commit/71d042df8facbbfb41db2c14bc132a7c8c5e7c50))
+
+
+### Bug Fixes
+
+* **desktop:** update Tauri commands and preferences handling; cleanup CI configs ([f446042](https://github.com/gleean/glean/commit/f446042023cd4c7fbef463906d265d1e776c7ff5))
+
 ## [0.2.0](https://github.com/gleean/glean/compare/v0.1.3...v0.2.0) (2026-05-20)
 
 
